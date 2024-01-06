@@ -1,16 +1,20 @@
+
 gnome = import('gnome')
 gnome.post_install(
   glib_compile_schemas: true,
   gtk_update_icon_cache: true,
-  update_desktop_database: true,
+  update_desktop_database: false,
 )
 
 dependency('libadwaita-1')
 dependency('gtk4')
 dependency('glib-2.0')
 dependency('openssl')
-dependency('alsa')
-dependency('libpulse')
+dependency('alsa', required : false)
+dependency('libpulse', required : false)
+
+
+
 
 conf = configuration_data()
 

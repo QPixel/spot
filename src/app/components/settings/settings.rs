@@ -7,6 +7,9 @@ use gtk::subclass::prelude::*;
 use gtk::CompositeTemplate;
 use libadwaita::prelude::*;
 
+use std::env;
+
+
 use super::SettingsModel;
 
 const SETTINGS: &str = "dev.alextren.Spot";
@@ -71,12 +74,27 @@ impl SettingsWindow {
     pub fn new() -> Self {
         let window: Self = glib::Object::new();
 
+        window.available_audio_backends();
         window.bind_backend_and_device();
         window.bind_settings();
         window.connect_theme_select();
         window
     }
 
+    // This should probably check at runtime for available backends
+    fn available_audio_backends(&self) {
+        let widget = self.imp();
+        let audio_backend = widget
+            .audio_backend
+            .downcast_ref::<libadwaita::ComboRow>()
+            .unwrap();
+
+        if env::consts::OS != "linux" {
+            audio_backend.set_activatable(false);
+            audio_backend.set_sensitive(false);
+            audio_backend.set_tooltip_text(Some("Only Rodio is available on your OS"));
+        }
+    }
     fn bind_backend_and_device(&self) {
         let widget = self.imp();
 
@@ -145,9 +163,10 @@ impl SettingsWindow {
             .mapping(|variant, _| {
                 variant.str().map(|s| {
                     match s {
-                        "pulseaudio" => 0,
-                        "alsa" => 1,
-                        "gstreamer" => 2,
+                        "rodio" => 0,
+                        "pulseaudio" => 1,
+                        "alsa" => 2,
+                        "gstreamer" => 3,
                         _ => unreachable!(),
                     }
                     .to_value()
@@ -156,9 +175,10 @@ impl SettingsWindow {
             .set_mapping(|value, _| {
                 value.get::<u32>().ok().map(|u| {
                     match u {
-                        0 => "pulseaudio",
-                        1 => "alsa",
-                        2 => "gstreamer",
+                        0 => "rodio",
+                        1 => "pulseaudio",
+                        2 => "alsa",
+                        3 => "gstreamer",
                         _ => unreachable!(),
                     }
                     .to_variant()

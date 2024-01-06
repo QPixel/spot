@@ -1,19 +1,19 @@
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::stream::StreamExt;
 
-use librespot::core::authentication::Credentials;
-use librespot::core::cache::Cache;
-use librespot::core::config::SessionConfig;
-use librespot::core::keymaster;
-use librespot::core::session::{Session, SessionError};
+use librespot_core::authentication::Credentials;
+use librespot_core::cache::Cache;
+use librespot_core::config::SessionConfig;
+use librespot_core::keymaster;
+use librespot_core::session::{Session, SessionError};
 
-use librespot::playback::mixer::softmixer::SoftMixer;
-use librespot::playback::mixer::{Mixer, MixerConfig};
-use librespot::protocol::authentication::AuthenticationType;
+use librespot_playback::mixer::softmixer::SoftMixer;
+use librespot_playback::mixer::{Mixer, MixerConfig};
+use librespot_protocol::authentication::AuthenticationType;
 
-use librespot::playback::audio_backend;
-use librespot::playback::config::{AudioFormat, Bitrate, PlayerConfig, VolumeCtrl};
-use librespot::playback::player::{Player, PlayerEvent, PlayerEventChannel};
+use librespot_playback::audio_backend;
+use librespot_playback::config::{AudioFormat, Bitrate, PlayerConfig, VolumeCtrl};
+use librespot_playback::player::{Player, PlayerEvent, PlayerEventChannel};
 
 use std::cell::RefCell;
 use std::env;
@@ -61,6 +61,7 @@ pub trait SpotifyPlayerDelegate {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AudioBackend {
+    Rodio,
     GStreamer(String),
     PulseAudio,
     Alsa(String),
@@ -259,6 +260,11 @@ impl SpotifyPlayer {
                 info!("using alsa ({})", &device);
                 let backend = audio_backend::find(Some("alsa".to_string())).unwrap();
                 backend(Some(device), AudioFormat::default())
+            }
+            AudioBackend::Rodio => {
+                info!("using rodio");
+                let backend = audio_backend::find(Some("rodio".to_string())).unwrap();
+                backend(None, AudioFormat::default())
             }
         })
     }

@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="spot">
   <enum id="dev.alextren.Spot.AudioBackend">
-    <value value="0" nick="pulseaudio" />
-    <value value="1" nick="alsa" />
-    <value value="2" nick="gstreamer" />
+    <value value="0" nick="rodio" />
+    <value value="1" nick="pulseaudio" />
+    <value value="2" nick="alsa" />
+    <value value="3" nick="gstreamer" />
   </enum>
   <enum id="dev.alextren.Spot.Bitrate">
     <value value="0" nick="96" />
@@ -37,7 +38,7 @@
       <summary>Songs bitrate (96, 160, 320kbps)</summary>
     </key>
     <key name='audio-backend' enum='dev.alextren.Spot.AudioBackend'>
-      <default>'pulseaudio'</default>
+      <default>'rodio'</default>
       <summary>Audio backend</summary>
     </key>
     <key name="gapless-playback" type="b">

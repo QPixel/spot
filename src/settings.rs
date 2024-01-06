@@ -1,7 +1,7 @@
 use crate::player::{AudioBackend, SpotifyPlayerSettings};
 use gio::prelude::SettingsExt;
 use libadwaita::ColorScheme;
-use librespot::playback::config::Bitrate;
+use librespot_playback::config::Bitrate;
 
 const SETTINGS: &str = "dev.alextren.Spot";
 
@@ -46,11 +46,12 @@ impl SpotifyPlayerSettings {
             _ => None,
         }?;
         let backend = match settings.enum_("audio-backend") {
-            0 => Some(AudioBackend::PulseAudio),
-            1 => Some(AudioBackend::Alsa(
+            0 => Some(AudioBackend::Rodio),
+            1 => Some(AudioBackend::PulseAudio),
+            2 => Some(AudioBackend::Alsa(
                 settings.string("alsa-device").as_str().to_string(),
             )),
-            2 => Some(AudioBackend::GStreamer(
+            3 => Some(AudioBackend::GStreamer(
                 "audioconvert dithering=none ! audioresample ! pipewiresink".to_string(), // This should be configurable eventually
             )),
             _ => None,

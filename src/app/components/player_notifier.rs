@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use futures::channel::mpsc::UnboundedSender;
-use librespot::core::spotify_id::SpotifyId;
+use librespot_core::spotify_id::SpotifyId;
 
 use crate::app::components::EventListener;
 use crate::app::state::{

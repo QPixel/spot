@@ -1,5 +1,5 @@
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use librespot::core::spotify_id::SpotifyId;
+use librespot_core::spotify_id::SpotifyId;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::SystemTime;

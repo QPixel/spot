@@ -25,13 +25,9 @@ features = ["v2_60"]
 version = "^0.17.9"
 features = ["v2_60"]
 
-[dependencies.librespot]
-version = "0.4.2"
-features = ["alsa-backend", "pulseaudio-backend", "gstreamer-backend"]
-
 [dependencies.tokio]
 version = "1"
-features = ["rt", "macros", "sync"]
+features = ["rt", "rt-multi-thread", "macros", "sync"]
 
 [dependencies.futures]
 package = "futures"
@@ -56,9 +52,19 @@ features = ["small_rng"]
 version = "0.7.0"
 features = ["gettext-system"]
 
-[dependencies.secret-service]
-version = "3.0.1"
-features = ["rt-async-io-crypto-rust"]
+# [dependencies.secret-service]
+# version = "3.0.1"
+# features = ["rt-async-io-crypto-rust"]
+
+[target.'cfg(target_os="macos")'.dependencies]
+librespot-core = {version = "0.4.2"}
+librespot-connect = { version = "0.4.2"}
+librespot-playback = { version = "0.4.2", features = ["rodio-backend", "gstreamer-backend"] }
+librespot-protocol = { version = "0.4.2" }
+
+
+# [target.'cfg(target_os="linux")'.dependencies]
+# librespot = {version = "0.4.2", default-features = false, features = ["alsa-backend", "pulseaudio-backend", "gstreamer-backend"] }
 
 [dependencies]
 gdk-pixbuf = "0.17.0"
@@ -73,3 +79,4 @@ lazy_static = "1.4.0"
 log = "0.4.17"
 env_logger = "0.10.0"
 percent-encoding = "2.2.0"
+keyring = "2"
