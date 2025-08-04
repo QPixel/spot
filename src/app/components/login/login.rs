@@ -2,10 +2,10 @@ use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use gtk::CompositeTemplate;
 use std::rc::Rc;
+use url::Url;
 
 use crate::app::components::EventListener;
-use crate::app::credentials::Credentials;
-use crate::app::state::{LoginCompletedEvent, LoginEvent};
+use crate::app::state::{LoginEvent, LoginStartedEvent};
 use crate::app::AppEvent;
 
 use super::LoginModel;
@@ -19,13 +19,7 @@ mod imp {
     #[template(resource = "/dev/alextren/Spot/components/login.ui")]
     pub struct LoginWindow {
         #[template_child]
-        pub username: TemplateChild<libadwaita::EntryRow>,
-
-        #[template_child]
-        pub password: TemplateChild<libadwaita::PasswordEntryRow>,
-
-        #[template_child]
-        pub login_button: TemplateChild<gtk::Button>,
+        pub login_with_spotify_button: TemplateChild<gtk::Button>,
 
         #[template_child]
         pub auth_error_container: TemplateChild<gtk::Revealer>,
@@ -56,6 +50,12 @@ glib::wrapper! {
     pub struct LoginWindow(ObjectSubclass<imp::LoginWindow>) @extends gtk::Widget, libadwaita::Window;
 }
 
+impl Default for LoginWindow {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LoginWindow {
     pub fn new() -> Self {
         glib::Object::new()
@@ -68,67 +68,22 @@ impl LoginWindow {
         let window = self.upcast_ref::<libadwaita::Window>();
         window.connect_close_request(move |_| {
             on_close();
-            gtk::Inhibit(false)
+            glib::Propagation::Stop
         });
     }
 
-    fn connect_submit<SubmitFn>(&self, on_submit: SubmitFn)
+    fn connect_login_oauth_spotify<F>(&self, on_login_with_spotify_button: F)
     where
-        SubmitFn: Fn(&str, &str) + Clone + 'static,
+        F: Fn() + 'static,
     {
-        let on_submit_clone = on_submit.clone();
-        let controller = gtk::EventControllerKey::new();
-        controller.set_propagation_phase(gtk::PropagationPhase::Capture);
-        controller.connect_key_pressed(
-            clone!(@weak self as _self => @default-return gtk::Inhibit(false), move |_, key, _, _| {
-                if key == gdk::Key::Return {
-                    _self.submit(&on_submit_clone);
-                    gtk::Inhibit(true)
-                } else {
-                    gtk::Inhibit(false)
-                }
-            }),
-        );
-        self.add_controller(controller);
-
         self.imp()
-            .login_button
-            .connect_clicked(clone!(@weak self as _self => move |_| {
-                _self.submit(&on_submit);
-            }));
+            .login_with_spotify_button
+            .connect_clicked(move |_| on_login_with_spotify_button());
     }
 
     fn show_auth_error(&self, shown: bool) {
-        let error_class = "error";
         let widget = self.imp();
-        if shown {
-            widget.username.add_css_class(error_class);
-            widget.password.add_css_class(error_class);
-        } else {
-            widget.username.remove_css_class(error_class);
-            widget.password.remove_css_class(error_class);
-        }
         widget.auth_error_container.set_reveal_child(shown);
-    }
-
-    fn submit<SubmitFn>(&self, on_submit: &SubmitFn)
-    where
-        SubmitFn: Fn(&str, &str),
-    {
-        let widget = self.imp();
-
-        self.show_auth_error(false);
-
-        let username_text = widget.username.text();
-        let password_text = widget.password.text();
-
-        if username_text.is_empty() {
-            widget.username.grab_focus();
-        } else if password_text.is_empty() {
-            widget.password.grab_focus();
-        } else {
-            on_submit(username_text.as_str(), password_text.as_str());
-        }
     }
 }
 
@@ -144,15 +99,23 @@ impl Login {
 
         let login_window = LoginWindow::new();
 
-        login_window.connect_close(clone!(@weak parent => move || {
-            if let Some(app) = parent.application().as_ref() {
-                app.quit();
+        login_window.connect_close(clone!(
+            #[weak]
+            parent,
+            move || {
+                if let Some(app) = parent.application().as_ref() {
+                    app.quit();
+                }
             }
-        }));
+        ));
 
-        login_window.connect_submit(clone!(@weak model => move |username, password| {
-            model.login(username.to_string(), password.to_string());
-        }));
+        login_window.connect_login_oauth_spotify(clone!(
+            #[weak]
+            model,
+            move || {
+                model.login_with_spotify();
+            }
+        ));
 
         Self {
             parent,
@@ -171,39 +134,39 @@ impl Login {
         self.window().set_visible(true);
     }
 
-    fn hide_and_save_creds(&self, credentials: Credentials) {
+    fn hide(&self) {
         self.window().set_visible(false);
-        self.model.save_for_autologin(credentials);
     }
 
     fn reveal_error(&self) {
+        self.show_self();
         self.login_window.show_auth_error(true);
+    }
+
+    fn open_login_url(&self, url: Url) {
+        if open::that(url.as_str()).is_err() {
+            warn!("Could not open login page");
+        }
     }
 }
 
 impl EventListener for Login {
     fn on_event(&mut self, event: &AppEvent) {
         match event {
-            AppEvent::LoginEvent(LoginEvent::LoginCompleted(LoginCompletedEvent::Password(
-                creds,
-            ))) => {
-                self.hide_and_save_creds(creds.clone());
+            AppEvent::LoginEvent(LoginEvent::LoginCompleted) => {
+                self.hide();
             }
             AppEvent::LoginEvent(LoginEvent::LoginFailed) => {
-                self.model.clear_saved_credentials();
                 self.reveal_error();
+            }
+            AppEvent::LoginEvent(LoginEvent::LoginStarted(LoginStartedEvent::OpenUrl(url))) => {
+                self.open_login_url(url.clone());
             }
             AppEvent::Started => {
                 self.model.try_autologin();
             }
             AppEvent::LoginEvent(LoginEvent::LogoutCompleted | LoginEvent::LoginShown) => {
                 self.show_self();
-            }
-            AppEvent::LoginEvent(LoginEvent::RefreshTokenCompleted {
-                token,
-                token_expiry_time,
-            }) => {
-                self.model.save_token(token.clone(), *token_expiry_time);
             }
             _ => {}
         }

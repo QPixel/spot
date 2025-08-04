@@ -203,7 +203,7 @@ impl SongBatch {
         // We have to split the batch in multiple batches
         } else {
             let n = songs.len();
-            let iter_count = (n + batch_size - 1) / batch_size;
+            let iter_count = n.div_ceil(batch_size);
             (0..iter_count)
                 .map(|i| {
                     let offset = batch.offset + i * batch_size;
@@ -256,6 +256,7 @@ pub enum RepeatMode {
 #[derive(Clone, Debug)]
 pub struct ConnectPlayerState {
     pub is_playing: bool,
+    #[allow(dead_code)]
     pub source: Option<SongsSource>,
     pub current_song_id: Option<String>,
     pub progress_ms: u32,

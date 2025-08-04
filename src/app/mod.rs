@@ -1,5 +1,6 @@
-use crate::api::CachedSpotifyClient;
 use crate::settings::SpotSettings;
+use crate::{api::CachedSpotifyClient, player::TokenStore};
+use crate::PlaybackAction;
 use futures::channel::mpsc::UnboundedSender;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -49,7 +50,8 @@ impl App {
         worker: Worker,
     ) -> Self {
         let state = AppState::new();
-        let spotify_client = Arc::new(CachedSpotifyClient::new());
+        let token_store = Arc::new(TokenStore::new());
+        let spotify_client = Arc::new(CachedSpotifyClient::new(Arc::clone(&token_store)));
         let model = Rc::new(AppModel::new(state, spotify_client));
 
         // Non widget components
@@ -59,6 +61,7 @@ impl App {
                 &settings,
                 Box::new(ActionDispatcherImpl::new(sender.clone(), worker.clone())),
                 sender.clone(),
+                token_store,
             ),
             App::make_dbus(Rc::clone(&model), sender.clone()),
         ];
@@ -86,6 +89,10 @@ impl App {
         // ...ALSO some way to send actions, but more conveniently
         let dispatcher = Box::new(ActionDispatcherImpl::new(sender.clone(), worker.clone()));
 
+        // For now, we hardcode 70% volume
+        // it would be nice to get this from gsettings *wink wink*
+        dispatcher.dispatch(PlaybackAction::SetVolume(0.7).into());
+
         // All components that will be available initially
         let mut components: Vec<Box<dyn EventListener>> = vec![
             App::make_window(&self.settings, builder, Rc::clone(model)),
@@ -96,7 +103,7 @@ impl App {
                 dispatcher.box_clone(),
                 worker.clone(),
             ),
-            App::make_login(builder, dispatcher.box_clone(), worker.clone()),
+            App::make_login(builder, dispatcher.box_clone()),
             App::make_navigation(
                 builder,
                 Rc::clone(model),
@@ -117,13 +124,18 @@ impl App {
         settings: &SpotSettings,
         dispatcher: Box<dyn ActionDispatcher>,
         sender: UnboundedSender<AppAction>,
+        token_store: Arc<TokenStore>,
     ) -> Box<impl EventListener> {
         let api = app_model.get_spotify();
         Box::new(PlayerNotifier::new(
             app_model,
             dispatcher,
             // Either communications with the librespot player
-            crate::player::start_player_service(settings.player_settings.clone(), sender.clone()),
+            crate::player::start_player_service(
+                settings.player_settings.clone(),
+                sender.clone(),
+                token_store,
+            ),
             // or with a Spotify Connect device
             crate::connect::start_connect_server(api, sender),
         ))
@@ -152,33 +164,25 @@ impl App {
         dispatcher: Box<dyn ActionDispatcher>,
         worker: Worker,
     ) -> Box<Navigation> {
-        let leaflet: libadwaita::Leaflet = builder.object("leaflet").unwrap();
+        let split_view: libadwaita::NavigationSplitView = builder.object("split_view").unwrap();
         let navigation_stack: gtk::Stack = builder.object("navigation_stack").unwrap();
         let home_listbox: gtk::ListBox = builder.object("home_listbox").unwrap();
         let model = NavigationModel::new(Rc::clone(&app_model), dispatcher.box_clone());
         // This is where components that are not created initially will be assembled
-        let screen_factory = ScreenFactory::new(
-            Rc::clone(&app_model),
-            dispatcher.box_clone(),
-            worker,
-            leaflet.clone(),
-        );
+        let screen_factory =
+            ScreenFactory::new(Rc::clone(&app_model), dispatcher.box_clone(), worker);
         Box::new(Navigation::new(
             model,
-            leaflet,
+            split_view,
             navigation_stack,
             home_listbox,
             screen_factory,
         ))
     }
 
-    fn make_login(
-        builder: &gtk::Builder,
-        dispatcher: Box<dyn ActionDispatcher>,
-        worker: Worker,
-    ) -> Box<Login> {
+    fn make_login(builder: &gtk::Builder, dispatcher: Box<dyn ActionDispatcher>) -> Box<Login> {
         let parent: gtk::Window = builder.object("window").unwrap();
-        let model = LoginModel::new(dispatcher, worker);
+        let model = LoginModel::new(dispatcher);
         Box::new(Login::new(parent, model))
     }
 
@@ -223,12 +227,12 @@ impl App {
     ) -> Box<UserMenu> {
         let parent: gtk::Window = builder.object("window").unwrap();
         let settings_model = SettingsModel::new(app_model.clone(), dispatcher.box_clone());
-        let settings = Settings::new(parent, settings_model);
+        let settings = Settings::new(parent.clone(), settings_model);
 
         let button: gtk::MenuButton = builder.object("user").unwrap();
-        let about: libadwaita::AboutWindow = builder.object("about").unwrap();
+        let about: libadwaita::AboutDialog = builder.object("about").unwrap();
         let model = UserMenuModel::new(app_model, dispatcher);
-        let user_menu = UserMenu::new(button, settings, about, model);
+        let user_menu = UserMenu::new(button, settings, about, parent, model);
         Box::new(user_menu)
     }
 

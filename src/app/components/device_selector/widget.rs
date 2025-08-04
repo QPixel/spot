@@ -1,8 +1,8 @@
 use crate::app::models::{ConnectDevice, ConnectDeviceKind};
 use crate::app::state::Device;
+use gdk::prelude::FromVariant;
 use gettextrs::gettext;
 use gio::{Action, SimpleAction, SimpleActionGroup};
-use glib::FromVariant;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use gtk::CompositeTemplate;
@@ -70,12 +70,15 @@ mod imp {
 
             self.obj()
                 .insert_action_group(ACTIONS, Some(&self.action_group));
-            self.obj()
-                .connect_clicked(clone!(@weak popover => move |_| {
+            self.obj().connect_clicked(clone!(
+                #[weak]
+                popover,
+                move |_| {
                     popover.set_visible(true);
                     popover.present();
                     popover.grab_focus();
-                }));
+                }
+            ));
         }
     }
 
@@ -111,7 +114,7 @@ impl DeviceSelectorWidget {
             let connect = SimpleAction::new_stateful(
                 CONNECT_ACTION,
                 Some(Option::<String>::static_variant_type().as_ref()),
-                Option::<String>::None.to_variant(),
+                &Option::<String>::None.to_variant(),
             );
             connect.connect_activate(move |action, device_id| {
                 if let Some(device_id) = device_id {
@@ -158,7 +161,7 @@ impl DeviceSelectorWidget {
 
         for device in devices {
             let check = gtk::CheckButton::builder()
-                .action_name(&format!("{}.{}", ACTIONS, CONNECT_ACTION))
+                .action_name(format!("{}.{}", ACTIONS, CONNECT_ACTION))
                 .action_target(&Some(&device.id).to_variant())
                 .group(&*widget.this_device_button)
                 .label(&device.label)

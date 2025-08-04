@@ -80,9 +80,13 @@ impl SavedTracks {
     pub fn new(model: Rc<SavedTracksModel>, worker: Worker) -> Self {
         let widget = SavedTracksWidget::new();
 
-        widget.connect_bottom_edge(clone!(@weak model => move || {
-            model.load_more();
-        }));
+        widget.connect_bottom_edge(clone!(
+            #[weak]
+            model,
+            move || {
+                model.load_more();
+            }
+        ));
 
         let playlist = Playlist::new(widget.song_list_widget().clone(), model.clone(), worker);
 
@@ -107,7 +111,7 @@ impl Component for SavedTracks {
 impl EventListener for SavedTracks {
     fn on_event(&mut self, event: &AppEvent) {
         match event {
-            AppEvent::Started | AppEvent::LoginEvent(LoginEvent::LoginCompleted(_)) => {
+            AppEvent::Started | AppEvent::LoginEvent(LoginEvent::LoginCompleted) => {
                 self.model.load_initial();
             }
             _ => {}

@@ -1,15 +1,12 @@
+use keyring::{Entry, Result};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use keyring::{Entry, Result};
-
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Credentials {
-    pub username: String,
-    pub password: String,
-    pub token: String,
+    pub access_token: String,
+    pub refresh_token: String,
     pub token_expiry_time: Option<SystemTime>,
-    pub country: String,
 }
 
 impl Credentials {
@@ -20,22 +17,28 @@ impl Credentials {
         }
     }
 
-    pub async fn retrieve() -> Result<Self> {
-        let service = Entry::new("spot", "default")?;
-        let item = service.get_password()?;
-        let creds: Self = serde_json::from_str(&item).unwrap();
-        Ok(creds)
+    pub async fn retrieve() -> Result<Self, Error> {
+        let service = SecretService::connect(EncryptionType::Dh).await?;
+        let collection = service.get_default_collection().await?;
+        if collection.is_locked().await? {
+            collection.unlock().await?;
+        }
+        let items = collection.search_items(make_attributes()).await?;
+        let item = items.first().ok_or(Error::NoResult)?.get_secret().await?;
+        serde_json::from_slice(&item).map_err(|_| Error::Unavailable)
     }
 
     // Try to clear the credentials
-    pub async fn logout() -> Result<()> {
-        let service = Entry::new("spot", "default")?;
-        match service.delete_password() {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                warn!("Could not delete credentials: {}", e);
-                Err(e)
-            },
+    pub async fn logout() -> Result<(), Error> {
+        let service = SecretService::connect(EncryptionType::Dh).await?;
+        let collection = service.get_default_collection().await?;
+        if !collection.is_locked().await? {
+            let result = collection.search_items(make_attributes()).await?;
+            let item = result.first().ok_or(Error::NoResult)?;
+            item.delete().await
+        } else {
+            warn!("Keyring is locked -- not clearing credentials");
+            Ok(())
         }
     }
 
@@ -43,8 +46,18 @@ impl Credentials {
         let service = Entry::new("spot", "default")?;
 
         // We simply write our stuct as JSON and send it
-        let encoded = serde_json::to_string(&self).unwrap();
-        service.set_password(&encoded)?;
+        info!("Saving credentials");
+        let encoded = serde_json::to_vec(&self).unwrap();
+        collection
+            .create_item(
+                "Spotify Credentials",
+                make_attributes(),
+                &encoded,
+                true,
+                "text/plain",
+            )
+            .await?;
+        info!("Saved credentials");
         Ok(())
     }
 }

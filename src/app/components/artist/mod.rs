@@ -47,6 +47,12 @@ glib::wrapper! {
     pub struct ArtistWidget(ObjectSubclass<imp::ArtistWidget>) @extends gtk::Widget, gtk::Box;
 }
 
+impl Default for ArtistWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ArtistWidget {
     pub fn new() -> Self {
         glib::Object::new()
@@ -58,12 +64,10 @@ impl ArtistWidget {
         _self
     }
 
-    pub fn connect_artist_pressed<F: Fn(&Self) + 'static>(&self, f: F) {
-        self.imp()
-            .avatar_btn
-            .connect_clicked(clone!(@weak self as _self => move |_| {
-                f(&_self);
-            }));
+    pub fn connect_artist_pressed<F: Fn() + 'static>(&self, f: F) {
+        self.imp().avatar_btn.connect_clicked(move |_| {
+            f();
+        });
     }
 
     fn bind(&self, model: &ArtistModel, worker: Worker) {

@@ -1,4 +1,8 @@
-# Spot [![spot-snapshots](https://github.com/xou816/spot/actions/workflows/spot-snapshots.yml/badge.svg?branch=master)](https://github.com/xou816/spot/actions/workflows/spot-snapshots.yml)
+# Riff (Spot fork)
+
+**This is a fork of Spot to continue development and add new features**
+
+I'm (@Diegovsky) a maintainer but don't have write access, making a fork unfortunately necessary.
 
 Gtk/Rust native Spotify client for the GNOME desktop. **Only works with premium accounts!**
 
@@ -6,11 +10,13 @@ Based on [librespot](https://github.com/librespot-org/librespot/).
 
 Join the discussion on [Matrix](https://matrix.to/#/#spot-devel:matrix.org).
 
-![Spot screenshot](./data/appstream/2.png)
+![Spot screenshot](./data/appstream/1.png)
 
 ## Installing
 
 <a href='https://flathub.org/apps/details/dev.alextren.Spot'><img width='130' alt='Download on Flathub' src='https://flathub.org/assets/badges/flathub-badge-en.png'/></a>
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/spot-client.svg)](https://repology.org/project/spot-client/versions)
 
 ## Usage notes
 
@@ -23,35 +29,6 @@ In GNOME, things should work out of the box. It might be a bit trickier to get i
 Bear special attention to the fact that to enable automatic login, you might have to use the same password for your user account and for the keyring, and that the keyring might need to be [set as default](https://wiki.archlinux.org/index.php/GNOME/Keyring#Passwords_are_not_remembered).
 
 See [this comment](https://github.com/xou816/spot/issues/92#issuecomment-801852593) for more details!
-
-### Login in with Facebook
-
-...is not supported. However, you can update your account in order to be able to log in with a username and password [as explained in this issue](https://github.com/xou816/spot/issues/373).
-
-
-### Settings
-
-Spot can also be configured via `gsettings` if you want to change the audio backend, the song bitrate, etc.
-
-### Seek bar warping
-It is possible to click on the seek bar to navigate to that position in a song. If you are having issues with this not working you may have [gtk-primary-button-warps-slider](https://docs.gtk.org/gtk3/property.Settings.gtk-primary-button-warps-slider.html) set to false.
-In order to fix this issue set the value to true in your gtk configuration.
-
-### Scrobbling
-
-Scrobbling is not supported directly by Spot. However, you can use a tool such a [rescrobbled](https://github.com/InputUsername/rescrobbled) ([see #85](https://github.com/xou816/spot/issues/85)).
-
-### Lyrics
-
-Similarly, Spot does not display lyrics for songs, but you can use [osdlyrics](https://github.com/osdlyrics/osdlyrics) ([see #226](https://github.com/xou816/spot/issues/226)).
-
-### Gtk theme
-
-Spot uses the dark theme variant by default; this can be changed in the settings.
-
-If you are using the flatpak version, don't forget to install your theme with flatpak as well. See [this comment](https://github.com/xou816/spot/issues/209#issuecomment-860180537) for details.
-
-Similarly, snap also requires that you install the corresponding snap for your theme. See [this comment](https://github.com/xou816/spot/issues/338#issuecomment-975543476) for details.
 
 ## Features
 
@@ -68,12 +45,6 @@ Similarly, snap also requires that you install the corresponding snap for your t
 - MPRIS integration
 - playlist management (creation and edition)
 - liked tracks
-
-### Planned
-
-- GNOME search provider?
-- improved search? (track results)
-- recommendations?
 
 ## Contributing
 

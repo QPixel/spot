@@ -198,12 +198,17 @@ pub struct PlaylistOwner {
     pub display_name: String,
 }
 
+const EMPTY_IMAGE: &'static [Image] = &[Image {
+    url: String::new(),
+    height: Some(640),
+    width: Some(640),
+}];
+
 impl WithImages for Playlist {
     fn images(&self) -> &[Image] {
-        if let Some(ref images) = self.images {
-            images
-        } else {
-            &[]
+        match &self.images {
+            Some(x) => &x[..],
+            None => &EMPTY_IMAGE[..],
         }
     }
 }
@@ -280,6 +285,7 @@ pub struct Artist {
 
 impl WithImages for Artist {
     fn images(&self) -> &[Image] {
+        #[allow(clippy::manual_unwrap_or_default)]
         if let Some(ref images) = self.images {
             images
         } else {
