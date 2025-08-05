@@ -29,13 +29,14 @@ impl TokenStore {
 
         match Credentials::retrieve().await {
             Ok(token) => {
-                self.storage.write().await.replace(token.clone());
-                Some(token)
+                if token.access_token.is_empty() {
+                    None
+                } else {
+                    self.storage.write().await.replace(token.clone());
+                    Some(token)
+                }
             }
-            Err(e) => {
-                error!("Couldnt get token from secrets service: {e}");
-                None
-            }
+            Err(_) => None,
         }
     }
 

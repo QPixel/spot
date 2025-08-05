@@ -25,9 +25,9 @@ features = []
 version = "^0.20"
 features = []
 
-[dependencies.librespot]
-version = "0.6.0"
-features = ["alsa-backend", "pulseaudio-backend", "gstreamer-backend"]
+# [dependencies.librespot]
+# version = "0.6.0"
+# features = ["alsa-backend", "pulseaudio-backend", "gstreamer-backend"]
 
 [dependencies.tokio]
 version = "1"

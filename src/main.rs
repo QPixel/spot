@@ -109,7 +109,6 @@ fn setup_gtk(settings: &settings::SpotSettings) {
 
     let manager = libadwaita::StyleManager::default();
     manager.set_color_scheme(settings.theme_preference);
-
     let res = gio::Resource::load(config::PKGDATADIR.to_owned() + "/spot.gresource")
         .expect("Could not load resources");
     gio::resources_register(&res);

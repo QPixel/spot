@@ -1,6 +1,6 @@
 use crate::settings::SpotSettings;
-use crate::{api::CachedSpotifyClient, player::TokenStore};
 use crate::PlaybackAction;
+use crate::{api::CachedSpotifyClient, player::TokenStore};
 use futures::channel::mpsc::UnboundedSender;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -63,7 +63,7 @@ impl App {
                 sender.clone(),
                 token_store,
             ),
-            App::make_dbus(Rc::clone(&model), sender.clone()),
+            // App::make_dbus(Rc::clone(&model), sender.clone()),
         ];
 
         Self {

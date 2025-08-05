@@ -1,4 +1,4 @@
-use keyring::{Entry, Result};
+use keyring::{Entry, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
@@ -17,29 +17,56 @@ impl Credentials {
         }
     }
 
-    pub async fn retrieve() -> Result<Self, Error> {
-        let service = SecretService::connect(EncryptionType::Dh).await?;
-        let collection = service.get_default_collection().await?;
-        if collection.is_locked().await? {
-            collection.unlock().await?;
+    // pub async fn retrieve() -> Result<Self, Error> {
+    //     let service = SecretService::connect(EncryptionType::Dh).await?;
+    //     let collection = service.get_default_collection().await?;
+    //     if collection.is_locked().await? {
+    //         collection.unlock().await?;
+    //     }
+    //     let items = collection.search_items(make_attributes()).await?;
+    //     let item = items.first().ok_or(Error::NoResult)?.get_secret().await?;
+    //     serde_json::from_slice(&item).map_err(|_| Error::Unavailable)
+    // }
+    pub async fn retrieve() -> Result<Self> {
+        let service = Entry::new("spot", "default")?;
+        if let Ok(password) = service.get_password() {
+            if password.is_empty() {
+                Ok(Self {
+                    access_token: String::new(),
+                    refresh_token: String::new(),
+                    token_expiry_time: None,
+                })
+            } else {
+                let creds = serde_json::from_str(&password).unwrap();
+                Ok(creds)
+            }
+        } else {
+            Ok(Self {
+                access_token: String::new(),
+                refresh_token: String::new(),
+                token_expiry_time: None,
+            })
         }
-        let items = collection.search_items(make_attributes()).await?;
-        let item = items.first().ok_or(Error::NoResult)?.get_secret().await?;
-        serde_json::from_slice(&item).map_err(|_| Error::Unavailable)
     }
 
     // Try to clear the credentials
-    pub async fn logout() -> Result<(), Error> {
-        let service = SecretService::connect(EncryptionType::Dh).await?;
-        let collection = service.get_default_collection().await?;
-        if !collection.is_locked().await? {
-            let result = collection.search_items(make_attributes()).await?;
-            let item = result.first().ok_or(Error::NoResult)?;
-            item.delete().await
-        } else {
-            warn!("Keyring is locked -- not clearing credentials");
-            Ok(())
-        }
+    // pub async fn logout() -> Result<(), Error> {
+    //     let service = SecretService::connect(EncryptionType::Dh).await?;
+    //     let collection = service.get_default_collection().await?;
+    //     if !collection.is_locked().await? {
+    //         let result = collection.search_items(make_attributes()).await?;
+    //         let item = result.first().ok_or(Error::NoResult)?;
+    //         item.delete().await
+    //     } else {
+    //         warn!("Keyring is locked -- not clearing credentials");
+    //         Ok(())
+    //     }
+    // }
+
+    pub async fn logout() -> Result<()> {
+        let service = Entry::new("spot", "default")?;
+        service.delete_password();
+        Ok(())
     }
 
     pub async fn save(&self) -> Result<()> {
@@ -47,16 +74,8 @@ impl Credentials {
 
         // We simply write our stuct as JSON and send it
         info!("Saving credentials");
-        let encoded = serde_json::to_vec(&self).unwrap();
-        collection
-            .create_item(
-                "Spotify Credentials",
-                make_attributes(),
-                &encoded,
-                true,
-                "text/plain",
-            )
-            .await?;
+        let encoded = serde_json::to_string(self).unwrap();
+        service.set_password(&encoded).unwrap();
         info!("Saved credentials");
         Ok(())
     }

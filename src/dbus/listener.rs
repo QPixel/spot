@@ -120,15 +120,16 @@ impl AppPlaybackStateListener {
 
 impl EventListener for AppPlaybackStateListener {
     fn on_event(&mut self, event: &AppEvent) {
-        if let AppEvent::PlaybackEvent(event) = event {
-            if let Some(update) = self.update_for(event) {
-                match self.sender.unbounded_send(update) {
-                    Ok(_) => (),
-                    Err(e) => {
-                        error!("Could not send event to DBUS server {}", e);
-                    }
-                }
-            }
-        }
+        println!("AppEvent: {:?}", event);
+        // if let AppEvent::PlaybackEvent(event) = event {
+        //     if let Some(update) = self.update_for(event) {
+        //         match self.sender.unbounded_send(update) {
+        //             Ok(_) => (),
+        //             Err(e) => {
+        //                 error!("Could not send event to DBUS server {}", e);
+        //             }
+        //         }
+        //     }
+        // }
     }
 }

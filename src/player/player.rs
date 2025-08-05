@@ -4,12 +4,10 @@ use futures::stream::StreamExt;
 use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
-use librespot_core::keymaster;
-use librespot_core::session::{Session, SessionError};
+use librespot_core::session::Session;
 
 use librespot_playback::mixer::softmixer::SoftMixer;
 use librespot_playback::mixer::{Mixer, MixerConfig};
-use librespot_protocol::authentication::AuthenticationType;
 
 use librespot_playback::audio_backend;
 use librespot_playback::config::{AudioFormat, Bitrate, PlayerConfig, VolumeCtrl};

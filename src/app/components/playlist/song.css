@@ -23,86 +23,86 @@
   animation: playing 1s linear infinite;
   color: @accent_bg_color;
   min-width: 16px;
-  -gtk-icon-source: -gtk-icontheme("playback-0-symbolic");
+  -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-0-symbolic.svg");
 }
 
 @keyframes playing {
   0% {
-    -gtk-icon-source: -gtk-icontheme("playback-0-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-0-symbolic.svg");
   }
 
   6% {
-    -gtk-icon-source: -gtk-icontheme("playback-1-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-1-symbolic.svg");
   }
 
   12% {
-    -gtk-icon-source: -gtk-icontheme("playback-2-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-2-symbolic.svg");
   }
 
   18% {
-    -gtk-icon-source: -gtk-icontheme("playback-3-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-3-symbolic.svg");
   }
 
   24% {
-    -gtk-icon-source: -gtk-icontheme("playback-4-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-4-symbolic.svg");
   }
 
   30% {
-    -gtk-icon-source: -gtk-icontheme("playback-5-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-5-symbolic.svg");
   }
 
   36% {
-    -gtk-icon-source: -gtk-icontheme("playback-6-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-6-symbolic.svg");
   }
 
   42% {
-    -gtk-icon-source: -gtk-icontheme("playback-7-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-7-symbolic.svg");
   }
 
   49% {
-    -gtk-icon-source: -gtk-icontheme("playback-8-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-8-symbolic.svg");
   }
 
   54% {
-    -gtk-icon-source: -gtk-icontheme("playback-9-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-9-symbolic.svg");
   }
 
   60% {
-    -gtk-icon-source: -gtk-icontheme("playback-10-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-10-symbolic.svg");
   }
 
   66% {
-    -gtk-icon-source: -gtk-icontheme("playback-11-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-11-symbolic.svg");
   }
 
   72% {
-    -gtk-icon-source: -gtk-icontheme("playback-12-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-12-symbolic.svg");
   }
 
   79% {
-    -gtk-icon-source: -gtk-icontheme("playback-13-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-13-symbolic.svg");
   }
 
   85% {
-    -gtk-icon-source: -gtk-icontheme("playback-14-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-14-symbolic.svg");
   }
 
   90% {
-    -gtk-icon-source: -gtk-icontheme("playback-15-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-15-symbolic.svg");
   }
 
   96% {
-    -gtk-icon-source: -gtk-icontheme("playback-16-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-16-symbolic.svg");
   }
 
   100% {
-    -gtk-icon-source: -gtk-icontheme("playback-0-symbolic");
+    -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-0-symbolic.svg");
   }
 }
 
 .playlist--paused .song--playing .song__icon {
   animation: none;
-  -gtk-icon-source: -gtk-icontheme("playback-paused-symbolic");
+  -gtk-icon-source: url("resource:///dev/alextren/Spot/icons/scalable/actions/playback-paused-symbolic.svg");
 }
 
 .song__icon,

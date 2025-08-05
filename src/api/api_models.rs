@@ -200,8 +200,8 @@ pub struct PlaylistOwner {
 
 const EMPTY_IMAGE: &'static [Image] = &[Image {
     url: String::new(),
-    height: Some(640),
-    width: Some(640),
+    height: Some(640.0),
+    width: Some(640.0),
 }];
 
 impl WithImages for Playlist {
