@@ -1,28 +1,56 @@
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
 
+#[cfg(target_os = "macos")]
 use librespot_core::authentication::Credentials;
+#[cfg(target_os = "macos")]
 use librespot_core::cache::Cache;
+#[cfg(target_os = "macos")]
 use librespot_core::config::SessionConfig;
+#[cfg(target_os = "macos")]
 use librespot_core::session::Session;
+#[cfg(not(target_os = "macos"))]
+use librespot::core::authentication::Credentials;
+#[cfg(not(target_os = "macos"))]
+use librespot::core::cache::Cache;
+#[cfg(not(target_os = "macos"))]
+use librespot::core::config::SessionConfig;
+#[cfg(not(target_os = "macos"))]
+use librespot::core::session::Session;
 
+#[cfg(target_os = "macos")]
 use librespot_playback::mixer::softmixer::SoftMixer;
+#[cfg(target_os = "macos")]
 use librespot_playback::mixer::{Mixer, MixerConfig};
+#[cfg(not(target_os = "macos"))]
+use librespot::playback::mixer::softmixer::SoftMixer;
+#[cfg(not(target_os = "macos"))]
+use librespot::playback::mixer::{Mixer, MixerConfig};
 
+#[cfg(target_os = "macos")]
 use librespot_playback::audio_backend;
+#[cfg(target_os = "macos")]
 use librespot_playback::config::{AudioFormat, Bitrate, PlayerConfig, VolumeCtrl};
+#[cfg(target_os = "macos")]
 use librespot_playback::player::{Player, PlayerEvent, PlayerEventChannel};
-use url::Url;
+#[cfg(not(target_os = "macos"))]
+use librespot::playback::audio_backend;
+#[cfg(not(target_os = "macos"))]
+use librespot::playback::config::{AudioFormat, Bitrate, PlayerConfig, VolumeCtrl};
+#[cfg(not(target_os = "macos"))]
+use librespot::playback::player::{Player, PlayerEvent, PlayerEventChannel};
 
-use super::oauth2::{AuthcodeChallenge, SpotOauthClient};
+use crate::app::models::RepeatMode;
+use crate::player::AppPlayerDelegate;
+
+use super::oauth2::{AuthcodeChallenge, RiffOauthClient};
 use super::{Command, TokenStore};
 use crate::app::credentials;
 use crate::player::oauth2::OAuthError;
-use crate::settings::SpotSettings;
+use crate::settings::RiffSettings;
 use std::env;
 use std::error::Error;
 use std::fmt;
-use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -48,16 +76,6 @@ impl fmt::Display for SpotifyError {
     }
 }
 
-pub trait SpotifyPlayerDelegate {
-    fn end_of_track_reached(&self);
-    fn login_challenge_started(&self, url: Url);
-    fn token_login_successful(&self, username: String);
-    fn refresh_successful(&self);
-    fn report_error(&self, error: SpotifyError);
-    fn notify_playback_state(&self, position: u32);
-    fn preload_next_track(&self);
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AudioBackend {
     Rodio,
@@ -66,17 +84,25 @@ pub enum AudioBackend {
     Alsa(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SpotifyPlayerSettings {
     pub bitrate: Bitrate,
     pub backend: AudioBackend,
     pub gapless: bool,
     pub ap_port: Option<u16>,
+
+    pub shuffle: bool,
+    pub repeat: RepeatMode,
+    pub volume: f64,
 }
 
 impl Default for SpotifyPlayerSettings {
     fn default() -> Self {
         Self {
+            volume: 0.7,
+            repeat: RepeatMode::None,
+            shuffle: false,
+
             bitrate: Bitrate::Bitrate160,
             gapless: true,
             backend: AudioBackend::PulseAudio,
@@ -92,19 +118,19 @@ pub struct SpotifyPlayer {
     session: Option<Session>,
 
     // Auth related stuff
-    oauth_client: Arc<SpotOauthClient>,
+    oauth_client: Arc<RiffOauthClient>,
     auth_challenge: Option<AuthcodeChallenge>,
     command_sender: UnboundedSender<Command>,
 
     // Receives feedback from commands or various events in the player
-    delegate: Rc<dyn SpotifyPlayerDelegate>,
+    delegate: AppPlayerDelegate,
 }
 
 impl SpotifyPlayer {
     pub fn new(
         settings: SpotifyPlayerSettings,
-        delegate: Rc<dyn SpotifyPlayerDelegate>,
-        token_store: Arc<TokenStore>,
+        delegate: AppPlayerDelegate,
+        token_store: TokenStore,
         command_sender: UnboundedSender<Command>,
     ) -> Self {
         Self {
@@ -112,7 +138,7 @@ impl SpotifyPlayer {
             mixer: None,
             player: None,
             session: None,
-            oauth_client: Arc::new(SpotOauthClient::new(token_store)),
+            oauth_client: Arc::new(RiffOauthClient::new(token_store)),
             auth_challenge: None,
             command_sender,
             delegate,
@@ -138,7 +164,7 @@ impl SpotifyPlayer {
         match action {
             Command::PlayerSetVolume(volume) => {
                 if let Some(mixer) = self.mixer.as_mut() {
-                    mixer.set_volume((VolumeCtrl::MAX_VOLUME as f64 * volume) as u16);
+                    mixer_set_volume(&mut **mixer, volume);
                 }
                 Ok(())
             }
@@ -159,6 +185,7 @@ impl SpotifyPlayer {
                 Ok(())
             }
             Command::PlayerLoad { track, resume } => {
+                debug!("Player: playing track {track}");
                 self.get_player_mut()?.load(track, resume, 0);
                 Ok(())
             }
@@ -182,10 +209,10 @@ impl SpotifyPlayer {
                 Ok(())
             }
             Command::Logout => {
-                self.session
-                    .take()
-                    .ok_or(SpotifyError::PlayerNotReady)?
-                    .shutdown();
+                self.oauth_client.clear_credentials().await;
+                if let Some(session) = self.session.take() {
+                    session.shutdown();
+                }
                 let _ = self.player.take();
                 Ok(())
             }
@@ -237,14 +264,14 @@ impl SpotifyPlayer {
                 self.initial_login(credentials).await
             }
             Command::ReloadSettings => {
-                let settings = SpotSettings::new_from_gsettings().unwrap_or_default();
+                let settings = RiffSettings::new_from_gsettings().unwrap_or_default();
                 self.settings = settings.player_settings;
 
                 let session = self.session.take().ok_or(SpotifyError::PlayerNotReady)?;
                 let new_player = self.create_player(session);
-                tokio::task::spawn_local(player_setup_delegate(
+                tokio::task::spawn(player_setup_delegate(
                     new_player.get_player_event_channel(),
-                    Rc::clone(&self.delegate),
+                    self.delegate.clone(),
                 ));
                 self.player.replace(new_player);
 
@@ -263,7 +290,7 @@ impl SpotifyPlayer {
 
         let oauth_client = Arc::clone(&self.oauth_client);
         let session = new_session.clone();
-        tokio::task::spawn_local(async move {
+        tokio::task::spawn(async move {
             loop {
                 if let Ok(token) = oauth_client.refresh_token_at_expiry().await {
                     _ = session
@@ -274,9 +301,9 @@ impl SpotifyPlayer {
         });
 
         let new_player = self.create_player(new_session.clone());
-        tokio::task::spawn_local(player_setup_delegate(
+        tokio::task::spawn(player_setup_delegate(
             new_player.get_player_event_channel(),
-            Rc::clone(&self.delegate),
+            self.delegate.clone(),
         ));
 
         self.player.replace(new_player);
@@ -296,17 +323,19 @@ impl SpotifyPlayer {
         };
         info!("bitrate: {:?}", &player_config.bitrate);
 
+        let volume = self.settings.volume;
         let soft_volume = self
             .mixer
             .get_or_insert_with(|| {
-                let mix = Box::new(SoftMixer::open(MixerConfig {
-                    // This value feels reasonable to me. Feel free to change it
-                    volume_ctrl: VolumeCtrl::Log(VolumeCtrl::DEFAULT_DB_RANGE / 2.0),
-                    ..Default::default()
-                }));
-                // TODO: Should read volume from somewhere instead of hard coding.
-                // Sets volume to 100%
-                mix.set_volume(VolumeCtrl::MAX_VOLUME);
+                let mut mix = Box::new(
+                    SoftMixer::open(MixerConfig {
+                        // This value feels reasonable to me. Feel free to change it
+                        volume_ctrl: VolumeCtrl::Log(VolumeCtrl::DEFAULT_DB_RANGE / 2.0),
+                        ..Default::default()
+                    })
+                    .expect("Failed to create soft mixer"),
+                );
+                mixer_set_volume(&mut *mix, volume);
                 mix
             })
             .get_soft_volume();
@@ -318,7 +347,7 @@ impl SpotifyPlayer {
             }
             AudioBackend::PulseAudio => {
                 info!("using pulseaudio");
-                env::set_var("PULSE_PROP_application.name", "Spot");
+                env::set_var("PULSE_PROP_application.name", "Riff");
                 let backend = audio_backend::find(Some("pulseaudio".to_string())).unwrap();
                 backend(None, AudioFormat::default())
             }
@@ -356,7 +385,7 @@ async fn create_session_with_port(
         ap_port,
         ..Default::default()
     };
-    let root = glib::user_cache_dir().join("spot").join("librespot");
+    let root = glib::user_cache_dir().join("riff").join("librespot");
     let cache = Cache::new(
         Some(root.join("credentials")),
         Some(root.join("volume")),
@@ -398,10 +427,7 @@ async fn create_session(
     }
 }
 
-async fn player_setup_delegate(
-    mut channel: PlayerEventChannel,
-    delegate: Rc<dyn SpotifyPlayerDelegate>,
-) {
+async fn player_setup_delegate(mut channel: PlayerEventChannel, delegate: AppPlayerDelegate) {
     while let Some(event) = channel.recv().await {
         match event {
             PlayerEvent::EndOfTrack { .. } => {
@@ -417,4 +443,8 @@ async fn player_setup_delegate(
             _ => {}
         }
     }
+}
+
+fn mixer_set_volume(mixer: &mut dyn Mixer, volume: f64) {
+    mixer.set_volume((VolumeCtrl::MAX_VOLUME as f64 * volume) as u16);
 }

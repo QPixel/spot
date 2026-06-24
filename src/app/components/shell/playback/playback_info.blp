@@ -1,0 +1,78 @@
+using Gtk 4.0;
+
+template $PlaybackInfoWidget : Button {
+  receives-default: true;
+  halign: start;
+  valign: center;
+  has-frame: false;
+
+  layout {
+    column-span: "1";
+    column: "0";
+    row: "0";
+  }
+
+  Box {
+    halign: start;
+    spacing: 0;
+
+    Picture playing_image {
+      width-request: 56;
+      height-request: 56;
+      content-fit: cover;
+      overflow: hidden;
+
+      styles [
+        "playing-image",
+      ]
+    }
+
+    Box song_info_box {
+      visible: false;
+      orientation: vertical;
+      halign: start;
+      hexpand: true;
+      margin-start: 12;
+      margin-end: 12;
+      valign: center;
+
+      Box title_container {
+        overflow: hidden;
+        hexpand: true;
+
+        Label song_title {
+          halign: start;
+          hexpand: true;
+          ellipsize: end;
+          single-line-mode: true;
+
+          styles [
+            "heading",
+          ]
+        }
+      }
+
+      Box artist_container {
+        overflow: hidden;
+        hexpand: true;
+
+        Label song_artist {
+          halign: start;
+          hexpand: true;
+          ellipsize: end;
+          single-line-mode: true;
+
+          styles [
+            "dim-label",
+            "caption",
+          ]
+        }
+      }
+
+    }
+  }
+
+  styles [
+    "playback-info",
+  ]
+}

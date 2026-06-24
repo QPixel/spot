@@ -5,3 +5,5 @@
 /.flatpak-builder/
 /src/config.rs
 /subprojects/blueprint-compiler
+/.idea/
+data/gschemas.compiled

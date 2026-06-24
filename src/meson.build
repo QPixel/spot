@@ -24,51 +24,43 @@ pkgdatadir = get_option('prefix') / get_option('datadir') / meson.project_name()
 conf.set_quoted('PKGDATADIR', pkgdatadir)
 
 if get_option('buildtype') == 'debug'
-  conf.set_quoted('APPID', 'dev.alextren.Spot.Devel')
+  conf.set_quoted('APPID', 'dev.diegovsky.Riff.Devel')
   conf.set('VERSION', meson.project_version() + '-dev')
 else
-  conf.set_quoted('APPID', 'dev.alextren.Spot')
+  conf.set_quoted('APPID', 'dev.diegovsky.Riff')
   conf.set('VERSION', meson.project_version())
 endif
 
 blueprints = custom_target('blueprints',
   build_always_stale: true,
   input: files(
-    'app/components/album/album.blp',
-    'app/components/artist/artist.blp',
-    'app/components/artist_details/artist_details.blp',
-    'app/components/details/album_header.blp',
-    'app/components/details/details.blp',
-    'app/components/details/release_details.blp',
-    'app/components/device_selector/device_selector.blp',
-    'app/components/headerbar/headerbar.blp',
-    'app/components/library/library.blp',
-    'app/components/login/login.blp',
-    'app/components/now_playing/now_playing.blp',
-    'app/components/playback/playback_controls.blp',
-    'app/components/playback/playback_info.blp',
-    'app/components/playback/playback_widget.blp',
-    'app/components/playlist/song.blp',
-    'app/components/playlist_details/playlist_details.blp',
-    'app/components/playlist_details/playlist_header.blp',
-    'app/components/playlist_details/playlist_headerbar.blp',
-    'app/components/saved_playlists/saved_playlists.blp',
-    'app/components/saved_tracks/saved_tracks.blp',
-    'app/components/search/search.blp',
-    'app/components/selection/selection_toolbar.blp',
-    'app/components/settings/settings.blp',
-    'app/components/user_details/user_details.blp',
-    'app/components/scrolling_header/scrolling_header.blp',
-    'app/components/sidebar/create_playlist.blp',
-    'app/components/sidebar/sidebar_row.blp',
+    # 'app/components/album/album.blp',
+    'app/components/pages/details_album/release_details.blp',
+    'app/components/widgets/details_page/header.blp',
+    'app/components/shell/device_selector/device_selector.blp',
+    'app/components/shell/headerbar/headerbar.blp',
+    'app/components/pages/login/login.blp',
+    'app/components/shell/playback/playback_controls.blp',
+    'app/components/shell/playback/playback_info.blp',
+    'app/components/shell/playback/playback_info_mobile.blp',
+    'app/components/shell/playback/playback_widget.blp',
+    'app/components/widgets/playlist/song.blp',
+    'app/components/pages/search/search.blp',
+    'app/components/widgets/selection/selection_toolbar.blp',
+    'app/components/pages/settings/settings.blp',
+    'app/components/widgets/card/card.blp',
+    'app/components/widgets/card_list/card_list.blp',
+    'app/components/widgets/card_list/card_view_menu.blp',
+    'app/components/shell/sidebar/create_playlist.blp',
+    'app/components/shell/sidebar/sidebar_row.blp',
     'window.blp',
   ),
   output: '.',
   command: [find_program('blueprint-compiler'), 'batch-compile', '@OUTPUT@', '@CURRENT_SOURCE_DIR@', '@INPUT@'],
 )
 
-gnome.compile_resources('spot',
-  'spot.gresource.xml',
+gnome.compile_resources('riff',
+  'riff.gresource.xml',
   gresource_bundle: true,
   install: true,
   install_dir: pkgdatadir,

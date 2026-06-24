@@ -15,18 +15,18 @@ use crate::app::state::PlaybackAction;
 use crate::app::AppAction;
 
 #[derive(Clone)]
-pub struct SpotMpris {
+pub struct RiffMpris {
     sender: UnboundedSender<AppAction>,
 }
 
-impl SpotMpris {
+impl RiffMpris {
     pub fn new(sender: UnboundedSender<AppAction>) -> Self {
         Self { sender }
     }
 }
 
 #[interface(interface = "org.mpris.MediaPlayer2")]
-impl SpotMpris {
+impl RiffMpris {
     fn quit(&self) -> Result<()> {
         Err(Error::NotSupported("Not implemented".to_string()))
     }
@@ -54,7 +54,7 @@ impl SpotMpris {
 
     #[zbus(property)]
     fn identity(&self) -> &'static str {
-        "Spot"
+        "Riff"
     }
 
     #[zbus(property)]
@@ -69,16 +69,16 @@ impl SpotMpris {
 
     #[zbus(property)]
     fn desktop_entry(&self) -> &'static str {
-        "dev.alextren.Spot"
+        "dev.diegovsky.Riff"
     }
 }
 
-pub struct SpotMprisPlayer {
+pub struct RiffMprisPlayer {
     state: MprisState,
     sender: UnboundedSender<AppAction>,
 }
 
-impl SpotMprisPlayer {
+impl RiffMprisPlayer {
     pub fn new(sender: UnboundedSender<AppAction>) -> Self {
         Self {
             state: MprisState::new(),
@@ -128,7 +128,7 @@ impl SpotMprisPlayer {
 }
 
 #[interface(interface = "org.mpris.MediaPlayer2.Player")]
-impl SpotMprisPlayer {
+impl RiffMprisPlayer {
     pub fn next(&self) -> Result<()> {
         self.sender
             .unbounded_send(PlaybackAction::Next.into())

@@ -5,11 +5,11 @@ use serde::de::DeserializeOwned;
 use serde_json::from_slice;
 use std::convert::Into;
 use std::future::Future;
-use std::sync::Arc;
-
+use super::api_models::WithImages;
 use super::cache::{CacheExpiry, CacheManager, CachePolicy, FetchResult};
 use super::client::*;
 use crate::app::models::*;
+use crate::app::state::CARD_BATCH_SIZE;
 use crate::player::TokenStore;
 
 pub type SpotifyResult<T> = Result<T, SpotifyApiError>;
@@ -67,6 +67,10 @@ pub trait SpotifyApiClient {
 
     fn remove_from_playlist(&self, id: &str, uris: Vec<String>) -> BoxFuture<SpotifyResult<()>>;
 
+    fn follow_playlist(&self, id: &str) -> BoxFuture<SpotifyResult<()>>;
+
+    fn unfollow_playlist(&self, id: &str) -> BoxFuture<SpotifyResult<()>>;
+
     fn update_playlist_details(&self, id: &str, name: String) -> BoxFuture<SpotifyResult<()>>;
 
     fn search(
@@ -100,9 +104,6 @@ pub trait SpotifyApiClient {
 
     fn player_resume(&self, device_id: String) -> BoxFuture<SpotifyResult<()>>;
 
-    #[allow(dead_code)]
-    fn player_next(&self, device_id: String) -> BoxFuture<SpotifyResult<()>>;
-
     fn player_seek(&self, device_id: String, pos: usize) -> BoxFuture<SpotifyResult<()>>;
 
     fn player_repeat(&self, device_id: String, mode: RepeatMode) -> BoxFuture<SpotifyResult<()>>;
@@ -126,9 +127,19 @@ pub trait SpotifyApiClient {
     ) -> BoxFuture<SpotifyResult<()>>;
 
     fn player_state(&self) -> BoxFuture<SpotifyResult<ConnectPlayerState>>;
+
+    fn get_followed_artists(
+        &self,
+        after: Option<String>,
+        limit: usize,
+    ) -> BoxFuture<SpotifyResult<(Vec<ArtistSummary>, Option<String>)>>;
+
+    fn follow_artist(&self, id: &str) -> BoxFuture<SpotifyResult<()>>;
+
+    fn unfollow_artist(&self, id: &str) -> BoxFuture<SpotifyResult<()>>;
 }
 
-enum SpotCacheKey<'a> {
+enum RiffCacheKey<'a> {
     SavedAlbums(usize, usize),
     SavedTracks(usize, usize),
     SavedPlaylists(usize, usize),
@@ -144,7 +155,7 @@ enum SpotCacheKey<'a> {
     UserPlaylists(&'a str, usize, usize),
 }
 
-impl SpotCacheKey<'_> {
+impl RiffCacheKey<'_> {
     fn into_raw(self) -> String {
         match self {
             Self::SavedAlbums(offset, limit) => format!("me_albums_{offset}_{limit}.json"),
@@ -175,6 +186,8 @@ impl SpotCacheKey<'_> {
 lazy_static! {
     pub static ref ME_TRACKS_CACHE: Regex = Regex::new(r"^me_tracks_\w+_\w+\.json$").unwrap();
     pub static ref ME_ALBUMS_CACHE: Regex = Regex::new(r"^me_albums_\w+_\w+\.json$").unwrap();
+    pub static ref ME_PLAYLISTS_CACHE: Regex =
+        Regex::new(r"^me_playlists_\w+_\w+\.json$").unwrap();
     pub static ref USER_CACHE: Regex =
         Regex::new(r"^me_(albums|playlists|tracks)_\w+_\w+\.json$").unwrap();
 }
@@ -189,10 +202,10 @@ pub struct CachedSpotifyClient {
 }
 
 impl CachedSpotifyClient {
-    pub fn new(token_store: Arc<TokenStore>) -> CachedSpotifyClient {
+    pub fn new(client: TokenStore) -> CachedSpotifyClient {
         CachedSpotifyClient {
-            client: SpotifyClient::new(token_store),
-            cache: CacheManager::for_dir("spot/net").unwrap(),
+            client: SpotifyClient::new(client),
+            cache: CacheManager::for_dir("riff/net").unwrap(),
         }
     }
 
@@ -231,7 +244,7 @@ impl CachedSpotifyClient {
 
     async fn cache_get_or_write<T, O, F>(
         &self,
-        key: SpotCacheKey<'_>,
+        key: RiffCacheKey<'_>,
         cache_policy: Option<CachePolicy>,
         write: F,
     ) -> SpotifyResult<T>
@@ -277,7 +290,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
     ) -> BoxFuture<SpotifyResult<Vec<AlbumDescription>>> {
         Box::pin(async move {
             let page = self
-                .cache_get_or_write(SpotCacheKey::SavedAlbums(offset, limit), None, |etag| {
+                .cache_get_or_write(RiffCacheKey::SavedAlbums(offset, limit), None, |etag| {
                     self.client
                         .get_saved_albums(offset, limit)
                         .etag(etag)
@@ -297,7 +310,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
     fn get_saved_tracks(&self, offset: usize, limit: usize) -> BoxFuture<SpotifyResult<SongBatch>> {
         Box::pin(async move {
             let page = self
-                .cache_get_or_write(SpotCacheKey::SavedTracks(offset, limit), None, |etag| {
+                .cache_get_or_write(RiffCacheKey::SavedTracks(offset, limit), None, |etag| {
                     self.client
                         .get_saved_tracks(offset, limit)
                         .etag(etag)
@@ -316,7 +329,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
     ) -> BoxFuture<SpotifyResult<Vec<PlaylistDescription>>> {
         Box::pin(async move {
             let page = self
-                .cache_get_or_write(SpotCacheKey::SavedPlaylists(offset, limit), None, |etag| {
+                .cache_get_or_write(RiffCacheKey::SavedPlaylists(offset, limit), None, |etag| {
                     self.client
                         .get_saved_playlists(offset, limit)
                         .etag(etag)
@@ -388,6 +401,35 @@ impl SpotifyApiClient for CachedSpotifyClient {
         })
     }
 
+    fn follow_playlist(&self, id: &str) -> BoxFuture<SpotifyResult<()>> {
+        let id = id.to_owned();
+
+        Box::pin(async move {
+            let _ = self.cache.set_expired_pattern(&ME_PLAYLISTS_CACHE).await;
+
+            self.client
+                .follow_playlist(&id)
+                .send_no_response()
+                .await?;
+            Ok(())
+        })
+    }
+
+    fn unfollow_playlist(&self, id: &str) -> BoxFuture<SpotifyResult<()>> {
+        let id = id.to_owned();
+
+        Box::pin(async move {
+            let _ = self.cache.set_expired_pattern(&ME_PLAYLISTS_CACHE).await;
+            let _ = self.cache.set_expired_pattern(&playlist_cache_key(&id)).await;
+
+            self.client
+                .unfollow_playlist(&id)
+                .send_no_response()
+                .await?;
+            Ok(())
+        })
+    }
+
     fn update_playlist_details(&self, id: &str, name: String) -> BoxFuture<SpotifyResult<()>> {
         let id = id.to_owned();
 
@@ -410,12 +452,12 @@ impl SpotifyApiClient for CachedSpotifyClient {
         let id = id.to_owned();
 
         Box::pin(async move {
-            let album = self.cache_get_or_write(SpotCacheKey::Album(&id), None, |etag| {
+            let album = self.cache_get_or_write(RiffCacheKey::Album(&id), None, |etag| {
                 self.client.get_album(&id).etag(etag).send()
             });
 
             let liked = self.cache_get_or_write(
-                SpotCacheKey::AlbumLiked(&id),
+                RiffCacheKey::AlbumLiked(&id),
                 Some(if self.client.has_token() {
                     CachePolicy::Revalidate
                 } else {
@@ -480,13 +522,13 @@ impl SpotifyApiClient for CachedSpotifyClient {
 
         Box::pin(async move {
             let album = self.cache_get_or_write(
-                SpotCacheKey::Album(&id),
+                RiffCacheKey::Album(&id),
                 Some(CachePolicy::IgnoreExpiry),
                 |etag| self.client.get_album(&id).etag(etag).send(),
             );
 
             let songs = self.cache_get_or_write(
-                SpotCacheKey::AlbumTracks(&id, offset, limit),
+                RiffCacheKey::AlbumTracks(&id, offset, limit),
                 None,
                 |etag| {
                     self.client
@@ -506,7 +548,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
 
         Box::pin(async move {
             let playlist = self
-                .cache_get_or_write(SpotCacheKey::Playlist(&id), None, |etag| {
+                .cache_get_or_write(RiffCacheKey::Playlist(&id), None, |etag| {
                     self.client.get_playlist(&id).etag(etag).send()
                 })
                 .await?;
@@ -526,7 +568,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
         Box::pin(async move {
             let songs = self
                 .cache_get_or_write(
-                    SpotCacheKey::PlaylistTracks(&id, offset, limit),
+                    RiffCacheKey::PlaylistTracks(&id, offset, limit),
                     None,
                     |etag| {
                         self.client
@@ -552,7 +594,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
         Box::pin(async move {
             let albums = self
                 .cache_get_or_write(
-                    SpotCacheKey::ArtistAlbums(&id, offset, limit),
+                    RiffCacheKey::ArtistAlbums(&id, offset, limit),
                     None,
                     |etag| {
                         self.client
@@ -576,25 +618,38 @@ impl SpotifyApiClient for CachedSpotifyClient {
         let id = id.to_owned();
 
         Box::pin(async move {
-            let artist = self.cache_get_or_write(SpotCacheKey::Artist(&id), None, |etag| {
+            let artist = self.cache_get_or_write(RiffCacheKey::Artist(&id), None, |etag| {
                 self.client.get_artist(&id).etag(etag).send()
             });
 
-            let albums = self.get_artist_albums(&id, 0, 20);
+            let albums = self.get_artist_albums(&id, 0, CARD_BATCH_SIZE);
 
             let top_tracks =
-                self.cache_get_or_write(SpotCacheKey::ArtistTopTracks(&id), None, |etag| {
+                self.cache_get_or_write(RiffCacheKey::ArtistTopTracks(&id), None, |etag| {
                     self.client.get_artist_top_tracks(&id).etag(etag).send()
                 });
 
-            let (artist, albums, top_tracks) = join!(artist, albums, top_tracks);
+            let is_followed = async {
+                self.client.is_artist_followed(&id).send().await
+                    .ok()
+                    .and_then(|r| r.deserialize())
+                    .and_then(|v: Vec<bool>| v.first().copied())
+                    .unwrap_or(false)
+            };
+
+            let (artist, albums, top_tracks, is_followed) = join!(artist, albums, top_tracks, is_followed);
 
             let artist = artist?;
+            let photo = ImageSet::from_images(
+                artist.images().iter().map(|i| (i.width, i.url.clone())),
+            );
             let result = ArtistDescription {
                 id: artist.id,
                 name: artist.name,
+                photo,
                 albums: albums?,
                 top_tracks: top_tracks?.into(),
+                is_followed,
             };
             Ok(result)
         })
@@ -646,7 +701,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
         Box::pin(async move {
             let playlists = self
                 .cache_get_or_write(
-                    SpotCacheKey::UserPlaylists(&id, offset, limit),
+                    RiffCacheKey::UserPlaylists(&id, offset, limit),
                     None,
                     |etag| {
                         self.client
@@ -670,18 +725,22 @@ impl SpotifyApiClient for CachedSpotifyClient {
         let id = id.to_owned();
 
         Box::pin(async move {
-            let user = self.cache_get_or_write(SpotCacheKey::User(&id), None, |etag| {
+            let user = self.cache_get_or_write(RiffCacheKey::User(&id), None, |etag| {
                 self.client.get_user(&id).etag(etag).send()
             });
 
-            let playlists = self.get_user_playlists(&id, 0, 30);
+            let playlists = self.get_user_playlists(&id, 0, CARD_BATCH_SIZE);
 
             let (user, playlists) = join!(user, playlists);
 
             let user = user?;
+            let photo = ImageSet::from_images(
+                user.images().iter().map(|i| (i.width, i.url.clone())),
+            );
             let result = UserDescription {
                 id: user.id,
                 name: user.display_name,
+                photo,
                 playlists: playlists?,
             };
             Ok(result)
@@ -772,10 +831,6 @@ impl SpotifyApiClient for CachedSpotifyClient {
         )
     }
 
-    fn player_next(&self, device_id: String) -> BoxFuture<SpotifyResult<()>> {
-        Box::pin(self.client.player_next(&device_id).send_no_response())
-    }
-
     fn player_seek(&self, device_id: String, pos: usize) -> BoxFuture<SpotifyResult<()>> {
         Box::pin(self.client.player_seek(&device_id, pos).send_no_response())
     }
@@ -822,6 +877,47 @@ impl SpotifyApiClient for CachedSpotifyClient {
                 .player_volume(&device_id, volume)
                 .send_no_response(),
         )
+    }
+
+    fn get_followed_artists(
+        &self,
+        after: Option<String>,
+        limit: usize,
+    ) -> BoxFuture<SpotifyResult<(Vec<ArtistSummary>, Option<String>)>> {
+        Box::pin(async move {
+            let result = self
+                .client
+                .get_followed_artists(after.as_deref(), limit)
+                .send()
+                .await?
+                .deserialize()
+                .ok_or(SpotifyApiError::NoContent)?;
+
+            let cursor = result.artists.cursors.and_then(|c| c.after);
+            let artists = result
+                .artists
+                .items
+                .unwrap_or_default()
+                .into_iter()
+                .map(ArtistSummary::from)
+                .collect();
+
+            Ok((artists, cursor))
+        })
+    }
+
+    fn follow_artist(&self, id: &str) -> BoxFuture<SpotifyResult<()>> {
+        let id = id.to_owned();
+        Box::pin(async move {
+            self.client.follow_artist(&id).send_no_response().await
+        })
+    }
+
+    fn unfollow_artist(&self, id: &str) -> BoxFuture<SpotifyResult<()>> {
+        let id = id.to_owned();
+        Box::pin(async move {
+            self.client.unfollow_artist(&id).send_no_response().await
+        })
     }
 }
 

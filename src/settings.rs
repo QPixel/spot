@@ -1,9 +1,20 @@
-use crate::player::{AudioBackend, SpotifyPlayerSettings};
+use crate::{
+    app::{
+        components::{CardLayout, CardSize, EventListener, SortOrder},
+        models::RepeatMode,
+        state::{PlaybackAction, PlaybackEvent},
+        AppAction, AppEvent, BrowserEvent,
+    },
+    player::{AudioBackend, SpotifyPlayerSettings},
+};
 use gio::prelude::SettingsExt;
 use libadwaita::ColorScheme;
+#[cfg(target_os = "macos")]
 use librespot_playback::config::Bitrate;
+#[cfg(not(target_os = "macos"))]
+use librespot::playback::config::Bitrate;
 
-const SETTINGS: &str = "dev.alextren.Spot";
+const SETTINGS: &str = "dev.diegovsky.Riff";
 
 #[derive(Clone, Debug, Default)]
 pub struct WindowGeometry {
@@ -37,8 +48,7 @@ impl WindowGeometry {
 
 // Player (librespot) settings
 impl SpotifyPlayerSettings {
-    pub fn new_from_gsettings() -> Option<Self> {
-        let settings = gio::Settings::new(SETTINGS);
+    fn new_from_gsettings(settings: &gio::Settings) -> Option<Self> {
         let bitrate = match settings.enum_("player-bitrate") {
             0 => Some(Bitrate::Bitrate96),
             1 => Some(Bitrate::Bitrate160),
@@ -59,36 +69,52 @@ impl SpotifyPlayerSettings {
         let gapless = settings.boolean("gapless-playback");
 
         let ap_port_val = settings.uint("ap-port");
-        if ap_port_val > 65535 {
-            panic!("Invalid access point port");
-        }
-
         // Access points usually use port 80, 443 or 4070. Since gsettings
         // does not allow optional values, we use 0 to indicate that any
         // port is OK and we should pass None to librespot's ap-port.
         let ap_port = match ap_port_val {
-            0 => None,
-            x => Some(x as u16),
+            1..=65535 => Some(ap_port_val as u16),
+            _ => None,
+        };
+
+        let volume = settings.double("volume");
+        let shuffle = settings.boolean("shuffle");
+        let repeat = match settings.string("repeat").as_str() {
+            "song" => RepeatMode::Song,
+            "playlist" => RepeatMode::Playlist,
+            "none" | _ => RepeatMode::None,
         };
 
         Some(Self {
+            volume,
+            repeat,
+            shuffle,
+
             bitrate,
             backend,
             gapless,
             ap_port,
         })
     }
+    pub fn actions(&self) -> Vec<AppAction> {
+        use PlaybackAction::*;
+        vec![
+            SetVolume(self.volume).into(),
+            SetShuffled(self.shuffle).into(),
+            SetRepeatMode(self.repeat).into(),
+        ]
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct SpotSettings {
+pub struct RiffSettings {
     pub theme_preference: ColorScheme,
     pub player_settings: SpotifyPlayerSettings,
     pub window: WindowGeometry,
 }
 
 // Application settings
-impl SpotSettings {
+impl RiffSettings {
     pub fn new_from_gsettings() -> Option<Self> {
         let settings = gio::Settings::new(SETTINGS);
         let theme_preference = match settings.enum_("theme-preference") {
@@ -99,18 +125,122 @@ impl SpotSettings {
         }?;
         Some(Self {
             theme_preference,
-            player_settings: SpotifyPlayerSettings::new_from_gsettings()?,
+            player_settings: SpotifyPlayerSettings::new_from_gsettings(&settings)?,
             window: WindowGeometry::new_from_gsettings(),
         })
     }
 }
 
-impl Default for SpotSettings {
+impl Default for RiffSettings {
     fn default() -> Self {
         Self {
             theme_preference: ColorScheme::PreferDark,
             player_settings: Default::default(),
             window: Default::default(),
+        }
+    }
+}
+
+/// Observes some app state changes and records them into GSettings.
+pub struct StateTracker {
+    settings: gio::Settings,
+}
+
+type GResult = Result<(), glib::error::BoolError>;
+impl StateTracker {
+    pub fn new_from_gsettings() -> Self {
+        Self {
+            settings: gio::Settings::new(SETTINGS),
+        }
+    }
+    fn on_playback_event(&self, event: &PlaybackEvent) -> GResult {
+        use PlaybackEvent::*;
+        match event {
+            VolumeSet(volume) => self.settings.set_double("volume", *volume)?,
+            ShuffleChanged(shuffle) => self.settings.set_boolean("shuffle", *shuffle)?,
+            RepeatModeChanged(repeat) => self.settings.set_string(
+                "repeat",
+                match *repeat {
+                    RepeatMode::Song => "song",
+                    RepeatMode::Playlist => "playlist",
+                    RepeatMode::None => "none",
+                },
+            )?,
+            _ => (),
+        }
+        Ok(())
+    }
+
+    fn handle_event(&self, event: &AppEvent) -> GResult {
+        match event {
+            AppEvent::PlaybackEvent(event) => self.on_playback_event(event)?,
+            AppEvent::BrowserEvent(BrowserEvent::CardLayoutChanged(layout)) => {
+                self.save_card_layout(*layout);
+            }
+            AppEvent::BrowserEvent(BrowserEvent::CardSizeChanged(size)) => {
+                self.save_card_size(*size);
+            }
+            AppEvent::BrowserEvent(BrowserEvent::SortOrderChanged(page, order)) => {
+                self.save_sort_order(page, *order);
+            }
+            _ => (),
+        }
+        Ok(())
+    }
+
+    pub fn save_card_layout(&self, layout: CardLayout) {
+        let _ = self.settings.set_string("card-layout", match layout {
+            CardLayout::Vertical => "vertical",
+            CardLayout::ImageOnly => "image-only",
+            CardLayout::Horizontal => "horizontal",
+        });
+    }
+
+    pub fn save_card_size(&self, size: CardSize) {
+        let _ = self.settings.set_string("card-size", match size {
+            CardSize::Small => "small",
+            CardSize::Medium => "medium",
+            CardSize::Large => "large",
+        });
+    }
+
+    pub fn load_card_layout(&self) -> CardLayout {
+        match self.settings.string("card-layout").as_str() {
+            "image-only" => CardLayout::ImageOnly,
+            "horizontal" => CardLayout::Horizontal,
+            _ => CardLayout::Vertical,
+        }
+    }
+
+    pub fn load_card_size(&self) -> CardSize {
+        match self.settings.string("card-size").as_str() {
+            "small" => CardSize::Small,
+            "medium" => CardSize::Medium,
+            _ => CardSize::Large,
+        }
+    }
+
+    pub fn save_sort_order(&self, page: &str, order: SortOrder) {
+        let key = format!("sort-{page}");
+        if self.settings.settings_schema().map_or(false, |s| s.has_key(&key)) {
+            let _ = self.settings.set_string(&key, order.to_str());
+        }
+    }
+
+    pub fn load_sort_order(&self, page: &str) -> SortOrder {
+        let key = format!("sort-{page}");
+        if self.settings.settings_schema().map_or(false, |s| s.has_key(&key)) {
+            SortOrder::parse_key(self.settings.string(&key).as_str())
+        } else {
+            SortOrder::RecentlyAdded
+        }
+    }
+}
+
+impl EventListener for StateTracker {
+    fn on_event(&mut self, event: &AppEvent) {
+        if let Err(e) = self.handle_event(event) {
+            error!("Trying to update gsettings: {e}")
         }
     }
 }

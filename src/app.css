@@ -1,13 +1,23 @@
 @define-color accent_bg_color @green_5;
 @define-color accent_color @green_3;
 
-.container {
-  transition: opacity 0.3s ease;
-  opacity: 0;
+@keyframes skeleton-pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1.0; }
+  100% { opacity: 0.6; }
 }
 
-.container--loaded {
-  opacity: 1;
+@define-color skeleton_color alpha(@card_shade_color, 0.8);
+
+.skeleton {
+  background-color: @skeleton_color;
+  color: transparent;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+
+.container--loaded .card {
+  transition: background-color 0.3s ease;
 }
 
 .playlist__title-entry--ro {

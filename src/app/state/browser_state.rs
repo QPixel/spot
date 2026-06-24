@@ -2,9 +2,22 @@ use super::{
     AppAction, AppEvent, ArtistState, DetailsState, HomeState, PlaylistDetailsState, ScreenName,
     SearchState, UpdatableState, UserState,
 };
+use crate::app::components::{CardLayout, CardSize, SortOrder};
 use crate::app::models::*;
 use std::borrow::Cow;
 use std::iter::Iterator;
+
+#[derive(Clone, Debug)]
+pub enum PaginationTarget {
+    SavedAlbums,
+    SavedPlaylists,
+    SavedTracks,
+    SavedArtists,
+    ArtistReleases(String),
+    UserPlaylists(String),
+    PlaylistTracks(String),
+    AlbumTracks(String),
+}
 
 // Actions that affect any "screen" that we push over time
 #[derive(Clone, Debug)]
@@ -17,6 +30,7 @@ pub enum BrowserAction {
     SetPlaylistsContent(Vec<PlaylistDescription>),
     AppendPlaylistsContent(Vec<PlaylistDescription>),
     RemoveTracksFromPlaylist(String, Vec<String>),
+    RemovePlaylist(String),
     SetAlbumDetails(Box<AlbumFullDescription>),
     AppendAlbumTracks(String, Box<SongBatch>),
     SetPlaylistDetails(Box<PlaylistDescription>, Box<SongBatch>),
@@ -37,6 +51,16 @@ pub enum BrowserAction {
     AppendSavedTracks(Box<SongBatch>),
     SaveTracks(Vec<SongDescription>),
     RemoveSavedTracks(Vec<String>),
+    SetSavedArtists(Vec<ArtistSummary>, Option<String>),
+    AppendSavedArtists(Vec<ArtistSummary>, Option<String>),
+    FollowArtist(String),
+    UnfollowArtist(String),
+    SavePlaylist(String),
+    UnsavePlaylist(String),
+    ConsumeNextPage(PaginationTarget),
+    ChangeCardLayout(CardLayout),
+    ChangeCardSize(CardSize),
+    ChangeSortOrder(String, SortOrder),
 }
 
 impl From<BrowserAction> for AppAction {
@@ -51,6 +75,9 @@ pub enum BrowserEvent {
     HomeVisiblePageChanged(&'static str),
     LibraryUpdated,
     SavedPlaylistsUpdated,
+    CardLayoutChanged(CardLayout),
+    CardSizeChanged(CardSize),
+    SortOrderChanged(String, SortOrder),
     AlbumDetailsLoaded(String),
     AlbumTracksAppended(String),
     PlaylistDetailsLoaded(String),
@@ -64,8 +91,11 @@ pub enum BrowserEvent {
     NavigationPoppedTo(ScreenName),
     AlbumSaved(String),
     AlbumUnsaved(String),
+    PlaylistSaved(String),
+    PlaylistUnsaved(String),
     UserDetailsUpdated(String),
     SavedTracksUpdated,
+    SavedArtistsUpdated,
 }
 
 impl From<BrowserEvent> for AppEvent {
@@ -343,6 +373,15 @@ impl UpdatableState for BrowserState {
             BrowserAction::NavigationPop if self.navigation_hidden => {
                 self.navigation_hidden = false;
                 vec![BrowserEvent::NavigationHidden(false)]
+            }
+            BrowserAction::ChangeCardLayout(layout) => {
+                vec![BrowserEvent::CardLayoutChanged(*layout)]
+            }
+            BrowserAction::ChangeCardSize(size) => {
+                vec![BrowserEvent::CardSizeChanged(*size)]
+            }
+            BrowserAction::ChangeSortOrder(page, order) => {
+                vec![BrowserEvent::SortOrderChanged(page.clone(), *order)]
             }
             // Besides navigation actions, we just forward actions to each dedicated reducer
             _ => self

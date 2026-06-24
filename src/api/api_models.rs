@@ -7,7 +7,7 @@ use std::{
     vec::IntoIter,
 };
 
-use crate::app::{models::*, SongsSource};
+use crate::app::models::*;
 
 #[derive(Serialize)]
 pub struct PlaylistDetails {
@@ -163,24 +163,28 @@ impl<T> Default for Page<T> {
     }
 }
 
-trait WithImages {
+#[derive(Deserialize, Debug, Clone)]
+pub struct Cursors {
+    pub after: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct CursorPage<T> {
+    pub items: Option<Vec<T>>,
+    pub cursors: Option<Cursors>,
+    #[allow(dead_code)] // Part of the Spotify API response but currently unused
+    pub limit: Option<usize>,
+    #[allow(dead_code)] // Part of the Spotify API response but currently unused
+    pub total: Option<usize>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct FollowedArtistsInner {
+    pub artists: CursorPage<Artist>,
+}
+
+pub(crate) trait WithImages {
     fn images(&self) -> &[Image];
-
-    fn best_image<T: PartialOrd, F: Fn(&Image) -> T>(&self, criterion: F) -> Option<&Image> {
-        let mut ords = self
-            .images()
-            .iter()
-            .map(|image| (criterion(image), image))
-            .collect::<Vec<(T, &Image)>>();
-
-        ords.sort_by(|a, b| (a.0).partial_cmp(&b.0).unwrap());
-        Some(ords.first()?.1)
-    }
-
-    fn best_image_for_width(&self, width: i32) -> Option<&Image> {
-        // When the API does return a float, it seems to just be an integer with a .0
-        self.best_image(|i| (width - (i.width.unwrap_or(0.0).abs()) as i32))
-    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -246,6 +250,8 @@ pub struct Album {
     pub release_date: Option<String>,
     pub name: String,
     pub images: Vec<Image>,
+    #[serde(default)]
+    pub popularity: u32,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -281,6 +287,8 @@ pub struct Artist {
     pub id: String,
     pub name: String,
     pub images: Option<Vec<Image>>,
+    #[serde(default)]
+    pub popularity: u32,
 }
 
 impl WithImages for Artist {
@@ -298,6 +306,16 @@ impl WithImages for Artist {
 pub struct User {
     pub id: String,
     pub display_name: String,
+    pub images: Option<Vec<Image>>,
+}
+
+impl WithImages for User {
+    fn images(&self) -> &[Image] {
+        match &self.images {
+            Some(x) => &x[..],
+            None => &[],
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -323,6 +341,7 @@ pub struct PlayerQueue {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct PlayerContext {
     #[serde(alias = "type")]
     pub type_: String,
@@ -336,6 +355,7 @@ pub struct PlayerState {
     pub repeat_state: String,
     pub shuffle_state: bool,
     pub item: FailibleTrackItem,
+    #[allow(dead_code)] // Part of the Spotify API response but currently unused
     pub context: Option<PlayerContext>,
 }
 
@@ -347,7 +367,7 @@ impl From<PlayerState> for ConnectPlayerState {
             repeat_state,
             shuffle_state,
             item,
-            context,
+            ..
         }: PlayerState,
     ) -> Self {
         let repeat = match &repeat_state[..] {
@@ -355,13 +375,6 @@ impl From<PlayerState> for ConnectPlayerState {
             "context" => RepeatMode::Playlist,
             _ => RepeatMode::None,
         };
-        let source = context.and_then(|PlayerContext { type_, uri }| match type_.as_str() {
-            "album" => {
-                let id = uri.split(':').last().unwrap_or_default();
-                Some(SongsSource::Album(id.to_string()))
-            }
-            _ => None,
-        });
         let shuffle = shuffle_state;
         let current_song_id = item.get().map(|i| i.track.id);
         Self {
@@ -369,7 +382,6 @@ impl From<PlayerState> for ConnectPlayerState {
             progress_ms,
             repeat,
             shuffle,
-            source,
             current_song_id,
         }
     }
@@ -424,9 +436,11 @@ pub struct RawSearchResults {
 
 impl From<Artist> for ArtistSummary {
     fn from(artist: Artist) -> Self {
-        let photo = artist.best_image_for_width(200).map(|i| &i.url).cloned();
-        let Artist { id, name, .. } = artist;
-        Self { id, name, photo }
+        let photo = ImageSet::from_images(
+            artist.images().iter().map(|i| (i.width, i.url.clone())),
+        );
+        let Artist { id, name, popularity, .. } = artist;
+        Self { id, name, photo, popularity }
     }
 }
 
@@ -523,7 +537,9 @@ where
                     })
                     .collect::<Vec<ArtistRef>>();
 
-                let art = album.best_image_for_width(200).map(|i| &i.url).cloned();
+                let art = ImageSet::from_images(
+                    album.images().iter().map(|i| (i.width, i.url.clone())),
+                );
                 let Album {
                     id: album_id,
                     name: album_name,
@@ -585,7 +601,9 @@ impl From<Album> for AlbumDescription {
             .clone()
             .try_into()
             .unwrap_or_else(|_| SongBatch::empty());
-        let art = album.best_image_for_width(200).map(|i| i.url.clone());
+        let art = ImageSet::from_images(
+            album.images().iter().map(|i| (i.width, i.url.clone())),
+        );
 
         Self {
             id: album.id,
@@ -595,6 +613,7 @@ impl From<Album> for AlbumDescription {
             art,
             songs,
             is_liked: false,
+            popularity: album.popularity,
         }
     }
 }
@@ -623,7 +642,9 @@ impl From<AlbumInfo> for AlbumReleaseDetails {
 
 impl From<Playlist> for PlaylistDescription {
     fn from(playlist: Playlist) -> Self {
-        let art = playlist.best_image_for_width(200).map(|i| i.url.clone());
+        let art = ImageSet::from_images(
+            playlist.images().iter().map(|i| (i.width, i.url.clone())),
+        );
         let Playlist {
             id,
             name,

@@ -16,6 +16,7 @@ pub struct BatchLoader {
 pub enum SongsSource {
     Playlist(String),
     Album(String),
+    Artist(String),
     SavedTracks,
 }
 
@@ -24,6 +25,7 @@ impl PartialEq for SongsSource {
         match (self, other) {
             (Self::Playlist(l), Self::Playlist(r)) => l == r,
             (Self::Album(l), Self::Album(r)) => l == r,
+            (Self::Artist(l), Self::Artist(r)) => l == r,
             (Self::SavedTracks, Self::SavedTracks) => true,
             _ => false,
         }
@@ -53,17 +55,6 @@ pub struct BatchQuery {
     pub batch: Batch,
 }
 
-impl BatchQuery {
-    // Given a query, compute the next batch to get (if any)
-    pub fn next(&self) -> Option<Self> {
-        let Self { source, batch } = self;
-        Some(Self {
-            source: source.clone(),
-            batch: batch.next()?,
-        })
-    }
-}
-
 impl BatchLoader {
     pub fn new(api: Arc<dyn SpotifyApiClient + Send + Sync>) -> Self {
         Self { api }
@@ -83,16 +74,33 @@ impl BatchLoader {
         let Batch {
             offset, batch_size, ..
         } = query.batch;
-        let result = match &query.source {
-            SongsSource::Playlist(id) => api.get_playlist_tracks(id, offset, batch_size).await,
-            SongsSource::SavedTracks => api.get_saved_tracks(offset, batch_size).await,
-            SongsSource::Album(id) => api.get_album_tracks(id, offset, batch_size).await,
+        if matches!(&query.source, SongsSource::Artist(_)) {
+            error!("Artist top tracks are not paginated and should not be batch-loaded");
+            return None;
+        }
+
+        let do_fetch = || match &query.source {
+            SongsSource::Playlist(id) => api.get_playlist_tracks(id, offset, batch_size),
+            SongsSource::SavedTracks => api.get_saved_tracks(offset, batch_size),
+            SongsSource::Album(id) => api.get_album_tracks(id, offset, batch_size),
+            SongsSource::Artist(_) => unreachable!(),
+        };
+
+        let result = match do_fetch().await {
+            Err(SpotifyApiError::InvalidToken) => do_fetch().await,
+            other => other,
         };
 
         match result {
             Ok(batch) => Some(create_action(query.source, batch)),
-            // No token? Why was the batch loader called? Ah, whatever
-            Err(SpotifyApiError::NoToken) => None,
+            Err(SpotifyApiError::NoToken | SpotifyApiError::InvalidToken) => None,
+            Err(SpotifyApiError::TooManyRequests) => {
+                error!("Spotify API error: rate limited");
+                Some(AppAction::ShowNotification(gettext(
+                    // translators: This notification is shown when Spotify throttles requests.
+                    "Rate limited by Spotify. Please wait a moment and try again.",
+                )))
+            }
             Err(err) => {
                 error!("Spotify API error: {}", err);
                 Some(AppAction::ShowNotification(gettext(

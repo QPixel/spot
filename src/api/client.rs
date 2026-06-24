@@ -8,7 +8,6 @@ use serde_json::from_str;
 use std::convert::Into;
 use std::marker::PhantomData;
 use std::str::FromStr;
-use std::sync::Arc;
 use thiserror::Error;
 
 use crate::player::TokenStore;
@@ -173,12 +172,12 @@ pub enum SpotifyApiError {
 }
 
 pub(crate) struct SpotifyClient {
-    token_store: Arc<TokenStore>,
+    token_store: TokenStore,
     client: HttpClient,
 }
 
 impl SpotifyClient {
-    pub(crate) fn new(token_store: Arc<TokenStore>) -> Self {
+    pub(crate) fn new(token_store: TokenStore) -> Self {
         let mut builder = HttpClient::builder();
         if cfg!(debug_assertions) {
             builder = builder.ssl_options(isahc::config::SslOption::DANGER_ACCEPT_INVALID_CERTS);
@@ -430,6 +429,18 @@ impl SpotifyClient {
             .json_body(Uris { uris })
     }
 
+    pub(crate) fn follow_playlist(&self, id: &str) -> SpotifyRequest<'_, (), ()> {
+        self.request()
+            .method(Method::PUT)
+            .uri(format!("/v1/playlists/{id}/followers"), None)
+    }
+
+    pub(crate) fn unfollow_playlist(&self, id: &str) -> SpotifyRequest<'_, (), ()> {
+        self.request()
+            .method(Method::DELETE)
+            .uri(format!("/v1/playlists/{id}/followers"), None)
+    }
+
     pub(crate) fn update_playlist_details(
         &self,
         playlist: &str,
@@ -484,6 +495,54 @@ impl SpotifyClient {
         self.request()
             .method(Method::GET)
             .uri("/v1/me/playlists".to_string(), Some(&query))
+    }
+
+    pub(crate) fn get_followed_artists(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> SpotifyRequest<'_, (), FollowedArtistsInner> {
+        let mut params = make_query_params();
+        params.append_pair("type", "artist");
+        params.append_pair("limit", &limit.to_string());
+        if let Some(after) = after {
+            params.append_pair("after", after);
+        }
+        let query = params.finish();
+
+        self.request()
+            .method(Method::GET)
+            .uri("/v1/me/following".to_string(), Some(&query))
+    }
+
+    pub(crate) fn follow_artist(&self, id: &str) -> SpotifyRequest<'_, (), ()> {
+        let query = make_query_params()
+            .append_pair("type", "artist")
+            .append_pair("ids", id)
+            .finish();
+        self.request()
+            .method(Method::PUT)
+            .uri("/v1/me/following".to_string(), Some(&query))
+    }
+
+    pub(crate) fn is_artist_followed(&self, id: &str) -> SpotifyRequest<'_, (), Vec<bool>> {
+        let query = make_query_params()
+            .append_pair("type", "artist")
+            .append_pair("ids", id)
+            .finish();
+        self.request()
+            .method(Method::GET)
+            .uri("/v1/me/following/contains".to_string(), Some(&query))
+    }
+
+    pub(crate) fn unfollow_artist(&self, id: &str) -> SpotifyRequest<'_, (), ()> {
+        let query = make_query_params()
+            .append_pair("type", "artist")
+            .append_pair("ids", id)
+            .finish();
+        self.request()
+            .method(Method::DELETE)
+            .uri("/v1/me/following".to_string(), Some(&query))
     }
 
     pub(crate) fn search(
@@ -578,15 +637,6 @@ impl SpotifyClient {
             .uri("/v1/me/player/pause".to_string(), Some(&query))
     }
 
-    pub(crate) fn player_next(&self, device_id: &str) -> SpotifyRequest<'_, (), ()> {
-        let query = make_query_params()
-            .append_pair("device_id", device_id)
-            .finish();
-        self.request()
-            .method(Method::PUT)
-            .uri("/v1/me/player/next".to_string(), Some(&query))
-    }
-
     pub(crate) fn player_seek(&self, device_id: &str, pos: usize) -> SpotifyRequest<'_, (), ()> {
         let query = make_query_params()
             .append_pair("device_id", device_id)
@@ -641,10 +691,10 @@ pub mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_username_encoding() {
+    #[tokio::test]
+    async fn test_username_encoding() {
         let username = "anna.lafuente❤";
-        let client = SpotifyClient::new(Arc::new(TokenStore::new()));
+        let client = SpotifyClient::new(TokenStore::new());
         let req = client.get_user(username);
         assert_eq!(
             req.request

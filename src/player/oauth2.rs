@@ -22,7 +22,6 @@ use oauth2::{PkceCodeVerifier, RefreshToken, RequestTokenError};
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -38,6 +37,8 @@ playlist-read-private,\
 playlist-read-collaborative,\
 user-library-read,\
 user-library-modify,\
+user-follow-read,\
+user-follow-modify,\
 user-top-read,\
 user-read-recently-played,\
 user-read-playback-state,\
@@ -47,9 +48,9 @@ user-modify-playback-state,\
 streaming,\
 playlist-modify-public";
 
-pub struct SpotOauthClient {
+pub struct RiffOauthClient {
     client: BasicClient,
-    token_store: Arc<TokenStore>,
+    token_store: TokenStore,
 }
 
 pub struct AuthcodeChallenge {
@@ -58,8 +59,8 @@ pub struct AuthcodeChallenge {
     listener: JoinHandle<Result<AuthorizationCode, OAuthError>>,
 }
 
-impl SpotOauthClient {
-    pub fn new(token_store: Arc<TokenStore>) -> Self {
+impl RiffOauthClient {
+    pub fn new(token_store: TokenStore) -> Self {
         let auth_url = AuthUrl::new("https://accounts.spotify.com/authorize".to_string())
             .expect("Malformed URL");
         let token_url = TokenUrl::new("https://accounts.spotify.com/api/token".to_string())
@@ -80,7 +81,7 @@ impl SpotOauthClient {
 
     pub async fn spawn_authcode_listener(
         &self,
-        notify_complete: impl FnOnce() + 'static,
+        notify_complete: impl FnOnce() + Send + 'static,
     ) -> Result<AuthcodeChallenge, OAuthError> {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -99,7 +100,7 @@ impl SpotOauthClient {
         Ok(AuthcodeChallenge {
             pkce_verifier,
             auth_url,
-            listener: tokio::task::spawn_local(async move {
+            listener: tokio::task::spawn(async move {
                 let result = wait_for_authcode(csrf_token).await;
                 notify_complete();
                 result
@@ -156,6 +157,10 @@ impl SpotOauthClient {
 
         self.token_store.set(token.clone()).await;
         Ok(token)
+    }
+
+    pub async fn clear_credentials(&self) {
+        self.token_store.clear().await;
     }
 
     pub async fn get_valid_token(&self) -> Result<Credentials, OAuthError> {

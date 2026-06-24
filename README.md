@@ -1,22 +1,30 @@
-# Riff (Spot fork)
+<h1 align="center"> Riff </h1>
+<h4 align="center"> A libadwaita/GTK4-based Spotify client </h4>
 
-**This is a fork of Spot to continue development and add new features**
+![showcase](data/appstream/scheme-dark.png)
 
-I'm (@Diegovsky) a maintainer but don't have write access, making a fork unfortunately necessary.
+<div align="center">
+    <a href='https://flathub.org/apps/details/dev.diegovsky.Riff'><img width='130' alt='Download on Flathub' src='https://flathub.org/assets/badges/flathub-badge-en.png'/></a>
+</div>
+<br>
 
-Gtk/Rust native Spotify client for the GNOME desktop. **Only works with premium accounts!**
+Enjoy listening to your favorite Spotify content with **Riff**: a libadwaita/GTK4-based Spotify client designed for GNOME!
 
-Based on [librespot](https://github.com/librespot-org/librespot/).
+Originally a fork of [Spot](https://github.com/xou816/spot),  Riff continues development to bring the coolest Spotify client onto your desktop and mobile. Written in Rust and based on [librespot](https://github.com/librespot-org/librespot/).
 
-Join the discussion on [Matrix](https://matrix.to/#/#spot-devel:matrix.org).
+If you have any feature suggestions or want to contribute to the project, feel free to leave an issue / pull request or join the discussion on our [Discord server](https://discord.gg/SYuYsjzWbm)!
 
-![Spot screenshot](./data/appstream/1.png)
+*Note*: AI contributions in any part are not welcome.
 
 ## Installing
 
-<a href='https://flathub.org/apps/details/dev.alextren.Spot'><img width='130' alt='Download on Flathub' src='https://flathub.org/assets/badges/flathub-badge-en.png'/></a>
+> [!NOTE]
+> **Riff requires a premium account to work!**
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/spot-client.svg)](https://repology.org/project/spot-client/versions)
+Riff is currently only available on Flathub. Install with the command below:
+```sh
+flatpak install flathub dev.diegovsky.Riff
+```
 
 ## Usage notes
 
@@ -62,26 +70,32 @@ If you feel like it, you are welcome to open a PR to be added to the `TRANSLATOR
 
 ## Building
 
+### Dependencies
+
+You can install the required development dependencies by running:
+
+```
+./setup-dev.sh
+```
+
 ### With GNOME Builder and flatpak
 
 Pre-requisite: install the `org.freedesktop.Sdk.Extension.rust-stable` SDK extension with flatpak. Builder might do this for you automatically, but it will install an older version; make sure  the version installed matches the version of the Freedesktop SDK GNOME uses.
 
-Open the project in GNOME Builder and make the `dev.alextren.Spot.development.json` configuration active. Then build :)
+Open the project in GNOME Builder and make the `dev.diegovsky.Riff.development.json` configuration active. Then build :)
 
 ### Manually
 
-Requires Rust (stable), **GTK4**, and a couple other things. Also requires **libadwaita** and **blueprint-compiler**: they are not packaged on all distros at the moment, you might have to build them yourself!
-
-With meson:
+You build and install with meson:
 
 ```
-meson target -Dbuildtype=debug -Doffline=false --prefix="$HOME/.local"
+meson setup target -Dbuildtype=debug -Doffline=false --prefix="$HOME/.local"
 ninja install -C target
 # to run test/linter/etc
 meson test -C target  --verbose
 ```
 
-This will install a `.desktop` file among other things, and the spot executable will be put in `.local/bin` (you might want to add it to your path).
+This will install a `.desktop` file among other things, and the riff executable will be put in `.local/bin` (you might want to add it to your path).
 
 To build an optimized release build, use `-Dbuildtype=release` instead.
 
@@ -90,8 +104,8 @@ To build an optimized release build, use `-Dbuildtype=release` instead.
 When adding new `msgids`, don't forget to regenerate/update the potfiles.
 
 ```
-ninja spot-pot -C target
-ninja spot-update-po -C target
+ninja riff-pot -C target
+ninja riff-update-po -C target
 ```
 
 ### Pulling updated strings from POEditor
@@ -114,8 +128,8 @@ ninja cargo-sources.json -C target
 
 Set the `RUST_LOG` env variable to the appropriate level.
 
-Debug builds (flatpak) are available from the master branch on Github (see the `spot-snaphots` action).
+Debug builds (flatpak) are available from the master branch on Github (see the `riff-snaphots` action).
 
-Spot caches images and HTTP responses in `~/.cache/spot`.
+Riff caches images and HTTP responses in `~/.cache/riff`.
 
-Spot uses [isahc](https://github.com/sagebind/isahc), which uses libcurl, therefore you can set the `https_proxy` env variable to help with debugging. In debug mode, Spot skips SSL certificate verification.
+Ruff uses [isahc](https://github.com/sagebind/isahc), which uses libcurl, therefore you can set the `https_proxy` env variable to help with debugging. In debug mode, Riff skips SSL certificate verification.

@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! resource {
     ($resource:expr) => {
-        concat!("/dev/alextren/Spot", $resource)
+        concat!("/dev/diegovsky/Riff", $resource)
     };
 }
 
@@ -13,92 +13,29 @@ use std::future::Future;
 use crate::api::SpotifyApiError;
 use crate::app::{ActionDispatcher, AppAction, AppEvent};
 
-mod navigation;
-pub use navigation::*;
+mod pages;
+pub use pages::*;
 
-mod playback;
-pub use playback::*;
+mod widgets;
+pub use widgets::*;
 
-mod playlist;
-pub use playlist::*;
-
-mod login;
-pub use login::*;
-
-mod settings;
-pub use settings::*;
+mod shell;
+pub use shell::*;
 
 mod player_notifier;
 pub use player_notifier::PlayerNotifier;
-
-mod library;
-pub use library::*;
-
-mod details;
-pub use details::*;
-
-mod search;
-pub use search::*;
-
-mod album;
-use album::*;
-
-mod artist;
-use artist::*;
-
-mod artist_details;
-pub use artist_details::*;
-
-mod user_details;
-pub use user_details::*;
-
-mod now_playing;
-pub use now_playing::*;
-
-mod device_selector;
-pub use device_selector::*;
-
-mod saved_tracks;
-pub use saved_tracks::*;
-
-mod user_menu;
-pub use user_menu::*;
-
-mod notification;
-pub use notification::*;
-
-mod saved_playlists;
-pub use saved_playlists::*;
-
-mod playlist_details;
-pub use playlist_details::*;
-
-mod window;
-pub use window::*;
-
-mod selection;
-pub use selection::*;
-
-mod headerbar;
-pub use headerbar::*;
-
-mod scrolling_header;
-pub use scrolling_header::*;
 
 pub mod utils;
 
 pub mod labels;
 
-pub mod sidebar;
-
 // without this the builder doesn't seen to know about the custom widgets
 pub fn expose_custom_widgets() {
-    playback::expose_widgets();
-    selection::expose_widgets();
-    headerbar::expose_widgets();
-    device_selector::expose_widgets();
-    playlist_details::expose_widgets();
-    scrolling_header::expose_widgets();
+    shell::playback::expose_widgets();
+    widgets::selection::expose_widgets();
+    shell::headerbar::expose_widgets();
+    shell::device_selector::expose_widgets();
+    widgets::details_page::expose_widgets();
 }
 
 impl dyn ActionDispatcher {
@@ -122,6 +59,13 @@ impl dyn ActionDispatcher {
                 Ok(actions) => actions,
                 Err(SpotifyApiError::NoToken) => vec![],
                 Err(SpotifyApiError::InvalidToken) => call().await.unwrap_or_else(|_| Vec::new()),
+                Err(SpotifyApiError::TooManyRequests) => {
+                    error!("Spotify API error: rate limited");
+                    vec![AppAction::ShowNotification(gettext(
+                        // translators: This notification is shown when Spotify throttles requests.
+                        "Rate limited by Spotify. Please wait a moment and try again.",
+                    ))]
+                }
                 Err(err) => {
                     error!("Spotify API error: {}", err);
                     vec![AppAction::ShowNotification(gettext(

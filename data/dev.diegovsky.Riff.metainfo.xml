@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.diegovsky.Riff</id>
+  <url type="homepage">https://github.com/Diegovsky/riff</url>
+  <url type="bugtracker">https://github.com/Diegovsky/riff/issues</url>
+  <url type="vcs-browser">https://github.com/Diegovsky/riff/</url>
+
+  <name>Riff</name>
+  <developer id="diegovsky@fosstodon.org">
+     <name>Diego Augusto</name>
+  </developer>
+  <summary>A libadwaita/GTK4-based Spotify client</summary>
+
+  <launchable type="desktop-id">dev.diegovsky.Riff.desktop</launchable>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <content_rating type="oars-1.1" />
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </recommends>
+
+  <description>
+    <p>Enjoy listening to your favorite Spotify content with Riff: a libadwaita/GTK4-based Spotify client designed for GNOME!</p>
+    <p>Originally a fork of Spot, Riff continues development to bring the coolest Spotify client onto your desktop and mobile. Written in Rust and based on librespot.</p>
+    <p>NOTE: Riff requires a premium account!</p>
+    <p>Current features:</p>
+    <ul>
+      <li>playback control (play/pause, prev/next, seeking)</li>
+      <li>play queue with shuffle option</li>
+      <li>selection mode: easily browse and select mutliple tracks to queue them</li>
+      <li>browse your saved albums and playlists</li>
+      <li>search albums and artists</li>
+      <li>view an artist's releases</li>
+      <li>view users' playlists</li>
+      <li>credentials management with Secret Service</li>
+      <li>MPRIS integration</li>
+    </ul>
+  </description>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/Diegovsky/riff/master/data/appstream/scheme-dark.png</image>
+      <caption>Riff in dark scheme</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Diegovsky/riff/master/data/appstream/scheme-light.png</image>
+      <caption>Riff in light scheme</caption>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="26.03" date="2026-03-25">
+        <description>
+            <p>This new maintenance release brings simple but fundamental changes.</p>
+            <p>Highlights:</p>
+            <ul>
+                <li>Playback state is now saved and restored properly.</li>
+                <li>Minor under-the-hood improvements.</li>
+                <li>More Russian translations.</li>
+            </ul>
+        </description>
+    </release>
+    <release version="25.11" date="2025-11-29">
+    </release>
+  </releases>
+</component>

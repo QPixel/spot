@@ -64,16 +64,27 @@ Adw.ApplicationWindow window {
 
             Button search_button {
               icon-name: "system-search-symbolic";
+              focus-on-click: false;
+              can-focus: false;
+            }
+
+            ToggleButton skeleton_toggle {
+              icon-name: "checkbox-mixed-symbolic";
+              focus-on-click: false;
+              can-focus: false;
+              visible: false;
             }
 
             [title]
             Adw.WindowTitle {
-              title: "Spot";
+              title: "Riff";
             }
 
             [end]
             MenuButton user {
               icon-name: "open-menu-symbolic";
+              focus-on-click: false;
+              can-focus: false;
             }
           }
 
@@ -127,8 +138,8 @@ Adw.ApplicationWindow window {
 }
 
 Adw.AboutDialog about {
-  application-name: "Spot";
-  website: "https://github.com/xou816/spot";
-  application-icon: "dev.alextren.Spot";
+  application-name: "Riff";
+  website: "https://github.com/Diegovsky/riff";
+  application-icon: "dev.diegovsky.Riff";
   license-type: mit_x11;
 }

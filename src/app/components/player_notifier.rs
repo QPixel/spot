@@ -2,7 +2,14 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use futures::channel::mpsc::UnboundedSender;
-use librespot_core::spotify_id::{SpotifyId, SpotifyItemType};
+#[cfg(target_os = "macos")]
+use librespot_core::spotify_id::SpotifyId;
+#[cfg(target_os = "macos")]
+use librespot_core::SpotifyUri;
+#[cfg(not(target_os = "macos"))]
+use librespot::core::spotify_id::SpotifyId;
+#[cfg(not(target_os = "macos"))]
+use librespot::core::SpotifyUri;
 
 use crate::app::components::EventListener;
 use crate::app::state::{
@@ -149,30 +156,26 @@ impl PlayerNotifier {
             PlaybackEvent::VolumeSet(volume) => Some(Command::PlayerSetVolume(*volume)),
             PlaybackEvent::TrackChanged(id) => {
                 info!("track changed: {}", id);
-                SpotifyId::from_base62(id).ok().map(|mut track| {
-                    track.item_type = SpotifyItemType::Track;
-                    Command::PlayerLoad {
-                        track,
+                SpotifyId::from_base62(id)
+                    .ok()
+                    .map(|track| Command::PlayerLoad {
+                        track: SpotifyUri::Track { id: track },
                         resume: true,
-                    }
-                })
+                    })
             }
             PlaybackEvent::SourceChanged => {
                 let resume = self.is_playing();
                 self.currently_playing()
                     .and_then(|c| SpotifyId::from_base62(c.song_id()).ok())
-                    .map(|mut track| {
-                        track.item_type = SpotifyItemType::Track;
-                        Command::PlayerLoad { track, resume }
+                    .map(|track| Command::PlayerLoad {
+                        track: SpotifyUri::Track { id: track },
+                        resume,
                     })
             }
             PlaybackEvent::TrackSeeked(position) => Some(Command::PlayerSeek(*position)),
             PlaybackEvent::Preload(id) => SpotifyId::from_base62(id)
                 .ok()
-                .map(|mut track| {
-                    track.item_type = SpotifyItemType::Track;
-                    track
-                })
+                .map(|track| SpotifyUri::Track { id: track })
                 .map(Command::PlayerPreload),
             _ => None,
         };

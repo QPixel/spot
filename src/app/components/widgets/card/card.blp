@@ -1,0 +1,49 @@
+using Gtk 4.0;
+
+template $CardWidget : Widget {
+  Picture cover_image {
+    content-fit: cover;
+    can-shrink: true;
+    overflow: hidden;
+
+    styles [
+      "card",
+    ]
+  }
+
+  Box label_box {
+    hexpand: false;
+    overflow: hidden;
+    orientation: vertical;
+    spacing: 6;
+
+    styles [
+      "card__labels",
+    ]
+
+    Label title_label {
+      label: " ";
+      ellipsize: end;
+      width-chars: 1;
+      margin-top: 6;
+
+      styles [
+        "title-4",
+      ]
+    }
+
+    Label subtitle_label {
+      label: " ";
+      ellipsize: end;
+      width-chars: 1;
+
+      styles [
+        "body",
+      ]
+    }
+  }
+
+  styles [
+    "container",
+  ]
+}

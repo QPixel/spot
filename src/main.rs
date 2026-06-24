@@ -1,3 +1,4 @@
+#![allow(mismatched_lifetime_syntaxes)]
 #[macro_use(clone)]
 extern crate glib;
 #[macro_use]
@@ -19,6 +20,7 @@ mod app;
 mod config;
 mod connect;
 mod dbus;
+pub mod feature_flags;
 mod player;
 mod settings;
 
@@ -27,7 +29,7 @@ use crate::app::dispatch::{spawn_task_handler, DispatchLoop};
 use crate::app::{state::PlaybackAction, App, AppAction, BrowserAction};
 
 fn main() {
-    let settings = settings::SpotSettings::new_from_gsettings().unwrap_or_default();
+    let settings = settings::RiffSettings::new_from_gsettings().unwrap_or_default();
     setup_gtk(&settings);
 
     // Looks like there's a side effect to declaring widgets that allows them to be referenced them in ui/blueprint files
@@ -35,14 +37,14 @@ fn main() {
     expose_custom_widgets();
 
     let gtk_app = gtk::Application::new(Some(config::APPID), ApplicationFlags::HANDLES_OPEN);
-    let builder = gtk::Builder::from_resource("/dev/alextren/Spot/window.ui");
+    let builder = gtk::Builder::from_resource("/dev/diegovsky/Riff/window.ui");
     let window: libadwaita::ApplicationWindow = builder.object("window").unwrap();
 
     // In debug mode, the app id is different (see meson config) so we fix the resource path (and add a distinctive style)
     // Having a different app id allows running both the stable and development version at the same time
     if cfg!(debug_assertions) {
-        // window.add_css_class("devel");
-        gtk_app.set_resource_base_path(Some("/dev/alextren/Spot"));
+        window.add_css_class("devel");
+        gtk_app.set_resource_base_path(Some("/dev/diegovsky/Riff"));
     }
 
     let context = glib::MainContext::default();
@@ -93,14 +95,14 @@ fn main() {
     std::process::exit(0);
 }
 
-fn setup_gtk(settings: &settings::SpotSettings) {
+fn setup_gtk(settings: &settings::RiffSettings) {
     // Setup logging
     env_logger::init();
 
     // Setup translations
-    textdomain("spot")
-        .and_then(|_| bindtextdomain("spot", config::LOCALEDIR))
-        .and_then(|_| bind_textdomain_codeset("spot", "UTF-8"))
+    textdomain("riff")
+        .and_then(|_| bindtextdomain("riff", config::LOCALEDIR))
+        .and_then(|_| bind_textdomain_codeset("riff", "UTF-8"))
         .expect("Could not setup localization");
 
     // Setup Gtk, Adwaita...
@@ -109,18 +111,39 @@ fn setup_gtk(settings: &settings::SpotSettings) {
 
     let manager = libadwaita::StyleManager::default();
     manager.set_color_scheme(settings.theme_preference);
-    let res = gio::Resource::load(config::PKGDATADIR.to_owned() + "/spot.gresource")
+
+    let res = gio::Resource::load(config::PKGDATADIR.to_owned() + "/riff.gresource")
         .expect("Could not load resources");
     gio::resources_register(&res);
 
     let provider = gtk::CssProvider::new();
-    provider.load_from_resource("/dev/alextren/Spot/app.css");
+    provider.load_from_resource("/dev/diegovsky/Riff/app.css");
 
     gtk::style_context_add_provider_for_display(
         &gdk::Display::default().unwrap(),
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
+
+    if feature_flags::is_enabled(feature_flags::FeatureFlag::DebugSkeleton) {
+        let skeleton_provider = gtk::CssProvider::new();
+        skeleton_provider.load_from_resource("/dev/diegovsky/Riff/skeleton_override.css");
+        gtk::style_context_add_provider_for_display(
+            &gdk::Display::default().unwrap(),
+            &skeleton_provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
+        );
+    }
+
+    if feature_flags::is_enabled(feature_flags::FeatureFlag::DebugCss) {
+        let debug_provider = gtk::CssProvider::new();
+        debug_provider.load_from_resource("/dev/diegovsky/Riff/debug.css");
+        gtk::style_context_add_provider_for_display(
+            &gdk::Display::default().unwrap(),
+            &debug_provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
 }
 
 fn setup_credits(about: libadwaita::AboutDialog) {

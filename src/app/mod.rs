@@ -1,7 +1,7 @@
-use crate::settings::SpotSettings;
-use crate::PlaybackAction;
-use crate::{api::CachedSpotifyClient, player::TokenStore};
+use crate::settings::{RiffSettings, StateTracker};
+use crate::{api::CachedSpotifyClient, feature_flags, player::TokenStore};
 use futures::channel::mpsc::UnboundedSender;
+use gtk::prelude::*;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -17,7 +17,7 @@ mod list_store;
 pub use list_store::*;
 
 pub mod state;
-pub use state::{AppAction, AppEvent, AppModel, AppState, BrowserAction, BrowserEvent};
+pub use state::{AppAction, AppEvent, AppModel, AppState, BrowserAction, BrowserEvent, PaginationTarget};
 
 mod batch_loader;
 pub use batch_loader::*;
@@ -30,7 +30,7 @@ pub use rng::LazyRandomIndex;
 
 // Where all the app logic happens
 pub struct App {
-    settings: SpotSettings,
+    settings: RiffSettings,
     // The builder instance used to properly configure all the widgets created at startup
     builder: gtk::Builder,
     // All the "components" that will be notified of things happening throughout the app
@@ -44,14 +44,14 @@ pub struct App {
 
 impl App {
     pub fn new(
-        settings: SpotSettings,
+        settings: RiffSettings,
         builder: gtk::Builder,
         sender: UnboundedSender<AppAction>,
         worker: Worker,
     ) -> Self {
         let state = AppState::new();
-        let token_store = Arc::new(TokenStore::new());
-        let spotify_client = Arc::new(CachedSpotifyClient::new(Arc::clone(&token_store)));
+        let token_store = TokenStore::new();
+        let spotify_client = Arc::new(CachedSpotifyClient::new(token_store.clone()));
         let model = Rc::new(AppModel::new(state, spotify_client));
 
         // Non widget components
@@ -63,7 +63,8 @@ impl App {
                 sender.clone(),
                 token_store,
             ),
-            // App::make_dbus(Rc::clone(&model), sender.clone()),
+            Box::new(StateTracker::new_from_gsettings()),
+            App::make_dbus(Rc::clone(&model), sender.clone()),
         ];
 
         Self {
@@ -89,9 +90,11 @@ impl App {
         // ...ALSO some way to send actions, but more conveniently
         let dispatcher = Box::new(ActionDispatcherImpl::new(sender.clone(), worker.clone()));
 
-        // For now, we hardcode 70% volume
-        // it would be nice to get this from gsettings *wink wink*
-        dispatcher.dispatch(PlaybackAction::SetVolume(0.7).into());
+        // Send gsettings updates for saved settings like repeat mode, shuffle, etc.
+        // has to be done after the UI loads, otherwise visual glitches occour.
+        for action in self.settings.player_settings.actions() {
+            sender.unbounded_send(action).unwrap();
+        }
 
         // All components that will be available initially
         let mut components: Vec<Box<dyn EventListener>> = vec![
@@ -115,16 +118,30 @@ impl App {
             App::make_notification(builder),
         ];
 
+        // Wire up skeleton toggle button (debug-only feature)
+        if feature_flags::is_enabled(feature_flags::FeatureFlag::DebugSkeleton) {
+            let skeleton_toggle: gtk::ToggleButton = builder.object("skeleton_toggle").unwrap();
+            let window: libadwaita::ApplicationWindow = builder.object("window").unwrap();
+            skeleton_toggle.set_visible(true);
+            skeleton_toggle.connect_toggled(move |btn| {
+                if btn.is_active() {
+                    window.add_css_class("force-skeleton");
+                } else {
+                    window.remove_css_class("force-skeleton");
+                }
+            });
+        }
+
         self.components.append(&mut components);
     }
 
     // A component that listens to what's happening in the app, and translates it for the actual player
     fn make_player_notifier(
         app_model: Rc<AppModel>,
-        settings: &SpotSettings,
+        settings: &RiffSettings,
         dispatcher: Box<dyn ActionDispatcher>,
         sender: UnboundedSender<AppAction>,
-        token_store: Arc<TokenStore>,
+        token_store: TokenStore,
     ) -> Box<impl EventListener> {
         let api = app_model.get_spotify();
         Box::new(PlayerNotifier::new(
@@ -150,7 +167,7 @@ impl App {
     }
 
     fn make_window(
-        settings: &SpotSettings,
+        settings: &RiffSettings,
         builder: &gtk::Builder,
         app_model: Rc<AppModel>,
     ) -> Box<impl EventListener> {
@@ -265,9 +282,15 @@ impl App {
 
     // Here is the loop
     pub async fn attach(mut self, dispatch_loop: DispatchLoop) {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to acquire tokio runtime");
+        let _guard = rt.enter();
+
         let app = &mut self;
         dispatch_loop
             .attach(move |action| {
+                if let AppAction::PlaybackAction(ref action) = action {
+                    info!("{action:#?}")
+                };
                 app.handle(action);
             })
             .await;

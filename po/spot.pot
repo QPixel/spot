@@ -1,12 +1,12 @@
 # SOME DESCRIPTIVE TITLE.
 # Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the spot package.
+# This file is distributed under the same license as the riff package.
 # FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
 #
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: spot\n"
+"Project-Id-Version: riff\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-11-26 13:50-0500\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
@@ -321,7 +321,7 @@ msgid "Copyright"
 msgstr ""
 
 #: src/app/components/login/login.blp:46
-msgid "Welcome to Spot"
+msgid "Welcome to Riff"
 msgstr ""
 
 #. Translators: Login window title, must mention Premium (a premium account is required).
@@ -400,4 +400,44 @@ msgstr ""
 #. Translators: A description of what happens when the user has saved albums.
 #: src/app/components/library/library.blp:29
 msgid "Your library will be shown here."
+msgstr ""
+
+#. Translators: Default title shown on a card when no title is available.
+#: src/app/components/widgets/card/widget.rs
+msgid "Untitled"
+msgstr ""
+
+#. Translators: Sort option — show items in the order they were saved
+#: src/app/models/card_enums.rs
+msgid "Recently Added"
+msgstr ""
+
+#. Translators: Sort option — alphabetical order by title
+#: src/app/models/card_enums.rs
+msgid "Alphabetic"
+msgstr ""
+
+#. Translators: Sort option — group by artist/creator name
+#: src/app/models/card_enums.rs
+msgid "Creator"
+msgstr ""
+
+#. Translators: Sort option — order by release date (newest first)
+#: src/app/models/card_enums.rs
+msgid "Date Released"
+msgstr ""
+
+#. Translators: Sort option — order by popularity score (highest first)
+#: src/app/models/card_enums.rs
+msgid "Popularity"
+msgstr ""
+
+#. Translators: Label for icon size controls in the card view menu
+#: src/app/components/widgets/card_list/card_view_menu.rs
+msgid "Icon Size"
+msgstr ""
+
+#. Translators: Label for sort order section in the card view menu
+#: src/app/components/widgets/card_list/card_view_menu.rs
+msgid "Sort By"
 msgstr ""
