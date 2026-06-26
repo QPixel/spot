@@ -97,7 +97,14 @@ pub fn start_dbus_server(
 
     let (sender, receiver) = unbounded();
 
-    thread::spawn(move || dbus_server(mpris, player, receiver));
+    thread::spawn(move || {
+        if let Err(e) = dbus_server(mpris, player, receiver) {
+            // MPRIS relies on a D-Bus session bus, which isn't available on
+            // every platform (e.g. macOS). Log once here so the downstream
+            // listener doesn't have to guess why the channel went away.
+            warn!("MPRIS/DBus server unavailable, media integration disabled: {e}");
+        }
+    });
 
     AppPlaybackStateListener::new(app_model, sender)
 }

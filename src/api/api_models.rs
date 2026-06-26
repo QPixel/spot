@@ -282,6 +282,14 @@ pub struct Image {
     pub width: Option<f64>,
 }
 
+impl Image {
+    pub fn width_px(&self) -> Option<u32> {
+        self.width
+            .filter(|width| width.is_finite() && *width >= 0.0 && *width <= u32::MAX as f64)
+            .map(|width| width.round() as u32)
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct Artist {
     pub id: String,
@@ -437,7 +445,7 @@ pub struct RawSearchResults {
 impl From<Artist> for ArtistSummary {
     fn from(artist: Artist) -> Self {
         let photo = ImageSet::from_images(
-            artist.images().iter().map(|i| (i.width, i.url.clone())),
+            artist.images().iter().map(|i| (i.width_px(), i.url.clone())),
         );
         let Artist { id, name, popularity, .. } = artist;
         Self { id, name, photo, popularity }
@@ -538,7 +546,7 @@ where
                     .collect::<Vec<ArtistRef>>();
 
                 let art = ImageSet::from_images(
-                    album.images().iter().map(|i| (i.width, i.url.clone())),
+                    album.images().iter().map(|i| (i.width_px(), i.url.clone())),
                 );
                 let Album {
                     id: album_id,
@@ -602,7 +610,7 @@ impl From<Album> for AlbumDescription {
             .try_into()
             .unwrap_or_else(|_| SongBatch::empty());
         let art = ImageSet::from_images(
-            album.images().iter().map(|i| (i.width, i.url.clone())),
+            album.images().iter().map(|i| (i.width_px(), i.url.clone())),
         );
 
         Self {
@@ -643,7 +651,7 @@ impl From<AlbumInfo> for AlbumReleaseDetails {
 impl From<Playlist> for PlaylistDescription {
     fn from(playlist: Playlist) -> Self {
         let art = ImageSet::from_images(
-            playlist.images().iter().map(|i| (i.width, i.url.clone())),
+            playlist.images().iter().map(|i| (i.width_px(), i.url.clone())),
         );
         let Playlist {
             id,

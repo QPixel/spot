@@ -641,7 +641,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
 
             let artist = artist?;
             let photo = ImageSet::from_images(
-                artist.images().iter().map(|i| (i.width, i.url.clone())),
+                artist.images().iter().map(|i| (i.width_px(), i.url.clone())),
             );
             let result = ArtistDescription {
                 id: artist.id,
@@ -735,7 +735,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
 
             let user = user?;
             let photo = ImageSet::from_images(
-                user.images().iter().map(|i| (i.width, i.url.clone())),
+                user.images().iter().map(|i| (i.width_px(), i.url.clone())),
             );
             let result = UserDescription {
                 id: user.id,

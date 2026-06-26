@@ -32,11 +32,18 @@ pub enum MprisStateUpdate {
 pub struct AppPlaybackStateListener {
     app_model: Rc<AppModel>,
     sender: UnboundedSender<MprisStateUpdate>,
+    // Set once the DBus server is gone (e.g. no session bus on macOS) so we
+    // stop trying to forward updates and don't flood the logs.
+    disconnected: bool,
 }
 
 impl AppPlaybackStateListener {
     pub fn new(app_model: Rc<AppModel>, sender: UnboundedSender<MprisStateUpdate>) -> Self {
-        Self { app_model, sender }
+        Self {
+            app_model,
+            sender,
+            disconnected: false,
+        }
     }
 
     fn make_track_meta(&self) -> Option<TrackMetadata> {
@@ -120,10 +127,14 @@ impl AppPlaybackStateListener {
 
 impl EventListener for AppPlaybackStateListener {
     fn on_event(&mut self, event: &AppEvent) {
+        if self.disconnected {
+            return;
+        }
         if let AppEvent::PlaybackEvent(event) = event {
             if let Some(update) = self.update_for(event) {
                 if let Err(e) = self.sender.unbounded_send(update) {
-                    log::error!("Could not send event to DBUS server: {e}");
+                    log::warn!("DBus server is not running, disabling MPRIS updates: {e}");
+                    self.disconnected = true;
                 }
             }
         }

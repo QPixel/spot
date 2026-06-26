@@ -15,6 +15,17 @@ meson command *ARGS:
 update-sources:
     python build-aux/flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
 
+# Keep vergen pinned for librespot-core 0.8.0 (see librespot#1681)
+update-deps:
+    cargo update
+    cargo update -p vergen --precise 9.0.6
+
 init *ARGS:
     meson setup -Dbuildtype=debug -Doffline=false --prefix="$HOME/.local" {{build}} {{ARGS}}
 
+run-macos:
+    glib-compile-schemas data
+    env GSETTINGS_SCHEMA_DIR="$PWD/data" \
+        XDG_DATA_DIRS="$(brew --prefix)/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
+        RUST_BACKTRACE=full RUST_LOG='riff=debug,librespot=error' \
+        cargo run
