@@ -29,3 +29,6 @@ run-macos:
         XDG_DATA_DIRS="$(brew --prefix)/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
         RUST_BACKTRACE=full RUST_LOG='riff=debug,librespot=error' \
         cargo run
+
+bundle-macos:
+    bash scripts/bundle-macos.sh

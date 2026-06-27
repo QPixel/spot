@@ -2,6 +2,7 @@
 /doc/target
 /cargo/
 /build/
+/BUILD-bundle/
 /.flatpak-builder/
 /src/config.rs
 /subprojects/blueprint-compiler

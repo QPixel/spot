@@ -28,9 +28,62 @@ use crate::app::components::expose_custom_widgets;
 use crate::app::dispatch::{spawn_task_handler, DispatchLoop};
 use crate::app::{state::PlaybackAction, App, AppAction, BrowserAction};
 
+/// Resolve pkg/locale directories, configuring bundle env vars on macOS when needed.
+fn resolve_data_dirs() -> (String, String) {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(dirs) = macos_bundle_data_dirs() {
+            return dirs;
+        }
+    }
+    (
+        config::PKGDATADIR.to_owned(),
+        config::LOCALEDIR.to_owned(),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn macos_bundle_data_dirs() -> Option<(String, String)> {
+    use std::env;
+
+    let macos_dir = env::current_exe().ok()?.parent()?.to_path_buf();
+    if macos_dir.file_name()?.to_str()? != "MacOS" {
+        return None;
+    }
+    let contents_dir = macos_dir.parent()?;
+    if contents_dir.file_name()?.to_str()? != "Contents" {
+        return None;
+    }
+
+    let resources = contents_dir.join("Resources");
+    let share = resources.join("share");
+    let pkgdatadir = share.join("riff");
+    let localedir = share.join("locale");
+
+    env::set_var(
+        "GSETTINGS_SCHEMA_DIR",
+        share.join("glib-2.0").join("schemas"),
+    );
+    env::set_var("XDG_DATA_DIRS", &share);
+    env::set_var(
+        "GDK_PIXBUF_MODULE_FILE",
+        resources
+            .join("lib")
+            .join("gdk-pixbuf-2.0")
+            .join("2.10.0")
+            .join("loaders.cache"),
+    );
+
+    Some((
+        pkgdatadir.to_string_lossy().into_owned(),
+        localedir.to_string_lossy().into_owned(),
+    ))
+}
+
 fn main() {
+    let (pkgdatadir, localedir) = resolve_data_dirs();
     let settings = settings::RiffSettings::new_from_gsettings().unwrap_or_default();
-    setup_gtk(&settings);
+    setup_gtk(&settings, &pkgdatadir, &localedir);
 
     // Looks like there's a side effect to declaring widgets that allows them to be referenced them in ui/blueprint files
     // so here goes!
@@ -95,13 +148,13 @@ fn main() {
     std::process::exit(0);
 }
 
-fn setup_gtk(settings: &settings::RiffSettings) {
+fn setup_gtk(settings: &settings::RiffSettings, pkgdatadir: &str, localedir: &str) {
     // Setup logging
     env_logger::init();
 
     // Setup translations
     textdomain("riff")
-        .and_then(|_| bindtextdomain("riff", config::LOCALEDIR))
+        .and_then(|_| bindtextdomain("riff", localedir))
         .and_then(|_| bind_textdomain_codeset("riff", "UTF-8"))
         .expect("Could not setup localization");
 
@@ -112,7 +165,7 @@ fn setup_gtk(settings: &settings::RiffSettings) {
     let manager = libadwaita::StyleManager::default();
     manager.set_color_scheme(settings.theme_preference);
 
-    let res = gio::Resource::load(config::PKGDATADIR.to_owned() + "/riff.gresource")
+    let res = gio::Resource::load(format!("{pkgdatadir}/riff.gresource"))
         .expect("Could not load resources");
     gio::resources_register(&res);
 
