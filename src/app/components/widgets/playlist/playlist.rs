@@ -5,8 +5,8 @@ use std::rc::Rc;
 
 use crate::app::components::utils::{ancestor, AnimatorDefault};
 use crate::app::components::{Component, EventListener, SongWidget};
-use crate::app::models::{SongListModel, SongModel, SongState};
-use crate::app::state::{PlaybackEvent, SelectionEvent, SelectionState};
+use crate::app::models::{SongDescription, SongListModel, SongModel, SongState};
+use crate::app::state::{BrowserEvent, PlaybackEvent, SelectionEvent, SelectionState};
 use crate::app::{AppEvent, Worker};
 
 pub trait PlaylistModel {
@@ -26,10 +26,10 @@ pub trait PlaylistModel {
         true
     }
 
-    fn actions_for(&self, _id: &str) -> Option<gio::ActionGroup> {
+    fn actions_for(&self, _song: &SongDescription) -> Option<gio::ActionGroup> {
         None
     }
-    fn menu_for(&self, _id: &str) -> Option<gio::MenuModel> {
+    fn menu_for(&self, _song: &SongDescription) -> Option<gio::MenuModel> {
         None
     }
 
@@ -49,15 +49,23 @@ pub trait PlaylistModel {
             .unwrap_or(false)
     }
 
+    fn is_song_liked(&self, _id: &str) -> bool {
+        false
+    }
+
+    fn toggle_song_like(&self, _id: &str) {}
+
     fn song_state(&self, id: &str) -> SongState {
         let is_playing = self.current_song_id().map(|s| s.eq(id)).unwrap_or(false);
         let is_selected = self
             .selection()
             .map(|s| s.is_song_selected(id))
             .unwrap_or(false);
+        let is_liked = self.is_song_liked(id);
         SongState {
             is_selected,
             is_playing,
+            is_liked,
         }
     }
 
@@ -108,14 +116,34 @@ where
             move |_, item| {
                 let item = item.downcast_ref::<gtk::ListItem>().unwrap();
                 let song_model = item.item().unwrap().downcast::<SongModel>().unwrap();
-                song_model.set_state(model.song_state(&song_model.get_id()));
 
+                // IMPORTANT: this callback must NOT read AppState (e.g. via
+                // model.song_state / current_song_id / selection). It runs while
+                // GTK emits items_changed, which we now emit synchronously from
+                // inside AppState's borrow_mut. Reading AppState here would panic
+                // (already-borrowed) and reintroduce the crash class this design
+                // avoids.
+                //
+                // The widget's appearance is driven entirely by the SongModel's
+                // own GObject properties (playing/selected/liked), which are
+                // seeded/updated out-of-band by Playlist::update_list. actions
+                // and menus are built from the SongModel's SongDescription, not
+                // from a lookup into AppState.
                 let widget = item.child().unwrap().downcast::<SongWidget>().unwrap();
                 widget.bind(&song_model, worker.clone(), model.show_song_covers());
 
-                let id = &song_model.get_id();
-                widget.set_actions(model.actions_for(id).as_ref());
-                widget.set_menu(model.menu_for(id).as_ref());
+                let song = song_model.description();
+                widget.set_actions(model.actions_for(&song).as_ref());
+                widget.set_menu(model.menu_for(&song).as_ref());
+
+                let like_id = song.id.clone();
+                widget.connect_like(clone!(
+                    #[weak]
+                    model,
+                    move || {
+                        model.toggle_song_like(&like_id);
+                    }
+                ));
             }
         ));
 
@@ -123,6 +151,8 @@ where
             let item = item.downcast_ref::<gtk::ListItem>().unwrap();
             let song_model = item.item().unwrap().downcast::<SongModel>().unwrap();
             song_model.unbind_all();
+            let widget = item.child().unwrap().downcast::<SongWidget>().unwrap();
+            widget.disconnect_like();
         });
 
         listview.connect_activate(clone!(
@@ -156,11 +186,22 @@ where
         ));
         listview.add_controller(press_gesture);
 
-        Self {
+        let playlist = Self {
             animator: AnimatorDefault::ease_in_out_animator(),
             listview,
             model,
-        }
+        };
+
+        // Seed the state (playing/selected/liked) of any items already present
+        // in the model. This runs during component construction, which happens
+        // outside AppState's borrow_mut, so reading AppState here is safe. It is
+        // required because the bind callback no longer pulls state from AppState;
+        // without this, pre-existing rows (e.g. the current track in the queue
+        // when opening the Now Playing page) would render with default state.
+        // Note: no autoscroll here — construction should not move the viewport.
+        playlist.seed_song_states();
+
+        playlist
     }
 
     fn autoscroll_to_playing(&self, index: usize) {
@@ -192,6 +233,25 @@ where
         }
     }
 
+    /// Refresh every loaded song's presentation state (playing/selected/liked)
+    /// from the model. Has NO side effects on scroll position.
+    ///
+    /// Use this for content-change events (initial load, pagination, queue
+    /// changes). Autoscrolling on those events is wrong and, on multi-section
+    /// pages (e.g. the artist page, where a playlist and a card list share one
+    /// scrolled window), drives a feedback loop: autoscroll -> bottom edge ->
+    /// card-list load_more -> content event -> autoscroll ... which hammers
+    /// pagination and can surface duplicate cards.
+    fn seed_song_states(&self) {
+        self.model.song_list_model().for_each(|_, model_song| {
+            let state = self.model.song_state(&model_song.get_id());
+            model_song.set_state(state);
+        });
+    }
+
+    /// Like `seed_song_states`, but additionally autoscrolls to the currently
+    /// playing track. Only appropriate for events where following the playing
+    /// track is the intended behavior (e.g. TrackChanged).
     fn update_list(&self) {
         let autoscroll_to_playing = self.model.autoscroll_to_playing();
         let is_selection_enabled = self.model.is_selection_enabled();
@@ -230,10 +290,12 @@ impl SongModel {
         SongState {
             is_playing,
             is_selected,
+            is_liked,
         }: SongState,
     ) {
         self.set_playing(is_playing);
         self.set_selected(is_selected);
+        self.set_liked(is_liked);
     }
 }
 
@@ -247,6 +309,7 @@ where
                 self.update_list();
             }
             AppEvent::PlaybackEvent(PlaybackEvent::TrackChanged(_)) => {
+                Self::set_paused(&self.listview, self.model.is_paused());
                 self.update_list();
             }
             AppEvent::PlaybackEvent(
@@ -257,6 +320,30 @@ where
             AppEvent::SelectionEvent(SelectionEvent::SelectionModeChanged(_)) => {
                 Self::set_selection_active(&self.listview, self.model.is_selection_enabled());
                 self.update_list();
+            }
+            AppEvent::BrowserEvent(BrowserEvent::SavedTracksUpdated) => {
+                self.update_list();
+            }
+            // Content-change events: the backing song list gained or lost items
+            // (initial load, pagination, queue changes, removals). Re-seed each
+            // SongModel's state because the bind callback no longer pulls it from
+            // AppState. This runs post-dispatch (borrow released), so reading
+            // AppState is safe. Crucially we seed WITHOUT autoscrolling — these
+            // events fire during pagination, and autoscrolling here would drive a
+            // scroll -> load_more -> content-event feedback loop.
+            AppEvent::PlaybackEvent(PlaybackEvent::PlaylistChanged) => {
+                self.seed_song_states();
+            }
+            AppEvent::BrowserEvent(
+                BrowserEvent::AlbumDetailsLoaded(_)
+                | BrowserEvent::AlbumTracksAppended(_)
+                | BrowserEvent::PlaylistDetailsLoaded(_)
+                | BrowserEvent::PlaylistTracksAppended(_)
+                | BrowserEvent::PlaylistTracksRemoved(_)
+                | BrowserEvent::ArtistDetailsUpdated(_)
+                | BrowserEvent::UserDetailsUpdated(_),
+            ) => {
+                self.seed_song_states();
             }
             _ => {}
         }

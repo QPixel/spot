@@ -1,6 +1,6 @@
 project(
   'riff',
-  version: '26.03',
+  version: '26.07',
   meson_version: '>= 0.59.0',
   default_options: ['warning_level=2', 'buildtype=release'],
 )
@@ -10,7 +10,7 @@ subdir('data')
 subdir('po')
 subdir('src')
 
-flatpak_cargo_generator = find_program(meson.project_source_root() / 'build-aux/flatpak-cargo-generator.py')
+flatpak_cargo_generator = find_program(meson.project_source_root() / 'scripts/flatpak-cargo-generator.py')
 
 cargo_sources = custom_target(
   'cargo-update-sources',
@@ -20,6 +20,6 @@ cargo_sources = custom_target(
   command: [
     flatpak_cargo_generator,
     '@INPUT@',
-    '-o', '@SOURCE_ROOT@/cargo-sources.json'
+    '-o', '@SOURCE_ROOT@/flatpak/cargo-sources.json'
   ]
 )

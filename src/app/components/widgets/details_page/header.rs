@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use gettextrs::gettext;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
@@ -39,6 +41,9 @@ mod imp {
         pub subtitle_label: TemplateChild<gtk::Label>,
 
         #[template_child]
+        pub subtitle_links_box: TemplateChild<gtk::Box>,
+
+        #[template_child]
         pub play_button: TemplateChild<gtk::Button>,
 
         #[template_child]
@@ -46,6 +51,9 @@ mod imp {
 
         #[template_child]
         pub like_button: TemplateChild<gtk::Button>,
+
+        #[template_child]
+        pub share_button: TemplateChild<gtk::Button>,
 
         #[template_child]
         pub info_button: TemplateChild<gtk::Button>,
@@ -97,15 +105,24 @@ impl DetailsHeader {
 
         widget.imp().image.set_halign(gtk::Align::Center);
         widget.imp().image.set_valign(gtk::Align::Center);
-        widget.imp().image_box.add_css_class("details-header__image-placeholder");
+        widget
+            .imp()
+            .image_box
+            .add_css_class("details-header__image-placeholder");
 
         // Apply shape-specific styling.
         widget.imp().image_box.add_css_class("card");
         match shape {
             HeaderImageShape::Square => {}
             HeaderImageShape::Circle => {
-                widget.imp().image.add_css_class("details-header__image--circular");
-                widget.imp().image_box.add_css_class("details-header__image--circular");
+                widget
+                    .imp()
+                    .image
+                    .add_css_class("details-header__image--circular");
+                widget
+                    .imp()
+                    .image_box
+                    .add_css_class("details-header__image--circular");
             }
         }
 
@@ -125,17 +142,25 @@ impl DetailsHeader {
     pub fn set_caption(&self, caption: &str) {
         let imp = self.widget.imp();
         imp.caption_label.set_label(caption);
-        imp.caption_label.set_opacity(if caption.is_empty() { 0.0 } else { 1.0 });
+        imp.caption_label
+            .set_opacity(if caption.is_empty() { 0.0 } else { 1.0 });
     }
 
     pub fn set_caption_visible(&self, visible: bool) {
-        self.widget.imp().caption_label.set_opacity(if visible { 1.0 } else { 0.0 });
+        self.widget
+            .imp()
+            .caption_label
+            .set_opacity(if visible { 1.0 } else { 0.0 });
     }
 
     pub fn set_subtitle(&self, subtitle: &str) {
         let imp = self.widget.imp();
         imp.subtitle_label.set_label(subtitle);
-        imp.subtitle_label.set_opacity(if subtitle.is_empty() { 0.0 } else { 1.0 });
+        imp.subtitle_label
+            .set_opacity(if subtitle.is_empty() { 0.0 } else { 1.0 });
+        // When setting a plain subtitle, hide the links box
+        imp.subtitle_links_box.set_visible(false);
+        imp.subtitle_label.set_visible(true);
     }
 
     pub fn get_title_text(&self) -> String {
@@ -157,7 +182,10 @@ impl DetailsHeader {
             gtk::IconLookupFlags::empty(),
         );
         self.widget.imp().image.set_paintable(Some(&icon));
-        self.widget.imp().image.set_content_fit(gtk::ContentFit::Fill);
+        self.widget
+            .imp()
+            .image
+            .set_content_fit(gtk::ContentFit::Fill);
     }
 
     // Action button state
@@ -175,7 +203,10 @@ impl DetailsHeader {
             gettext("Play")
         };
         self.widget.imp().play_button.set_icon_name(icon);
-        self.widget.imp().play_button.set_tooltip_text(Some(&tooltip));
+        self.widget
+            .imp()
+            .play_button
+            .set_tooltip_text(Some(&tooltip));
     }
 
     /// Update the like button icon to reflect saved/unsaved state.
@@ -203,7 +234,10 @@ impl DetailsHeader {
     /// Connect a handler to the shuffle button. Also makes the button visible.
     pub fn connect_shuffle<F: Fn() + 'static>(&self, f: F) {
         self.widget.imp().shuffle_button.set_visible(true);
-        self.widget.imp().shuffle_button.connect_clicked(move |_| f());
+        self.widget
+            .imp()
+            .shuffle_button
+            .connect_clicked(move |_| f());
     }
 
     /// Connect a handler to the like/save button. Also makes the button visible.
@@ -218,6 +252,12 @@ impl DetailsHeader {
         self.widget.imp().info_button.connect_clicked(move |_| f());
     }
 
+    /// Connect a handler to the share button. Also makes the button visible.
+    pub fn connect_share<F: Fn() + 'static>(&self, f: F) {
+        self.widget.imp().share_button.set_visible(true);
+        self.widget.imp().share_button.connect_clicked(move |_| f());
+    }
+
     /// Connect a handler to the edit button. Also makes the button visible.
     #[allow(dead_code)]
     pub fn connect_edit<F: Fn() + 'static>(&self, f: F) {
@@ -225,13 +265,56 @@ impl DetailsHeader {
         self.widget.imp().edit_button.connect_clicked(move |_| f());
     }
 
-    /// Make the subtitle label clickable (e.g. to navigate to an artist page).
-    pub fn connect_subtitle_clicked<F: Fn() + 'static>(&self, f: F) {
-        let gesture = gtk::GestureClick::new();
-        gesture.connect_released(move |_, _, _, _| {
-            f();
-        });
-        self.widget.imp().subtitle_label.add_controller(gesture);
+    /// Set multiple artist link buttons in the subtitle area.
+    /// Each artist is rendered as a clickable button. Buttons are separated by
+    /// comma labels: "Artist 1, Artist 2, Artist 3".
+    /// The callback receives the artist ID when a button is clicked.
+    pub fn set_subtitle_links<F: Fn(&str) + 'static>(
+        &self,
+        artists: &[(String, String)],
+        on_clicked: F,
+    ) {
+        let imp = self.widget.imp();
+        let links_box = &*imp.subtitle_links_box;
+
+        // Clear any previous children
+        while let Some(child) = links_box.first_child() {
+            links_box.remove(&child);
+        }
+
+        if artists.is_empty() {
+            links_box.set_visible(false);
+            imp.subtitle_label.set_visible(true);
+            return;
+        }
+
+        // Hide the plain label, show the links box
+        imp.subtitle_label.set_visible(false);
+        imp.subtitle_label.set_opacity(0.0);
+        links_box.set_visible(true);
+
+        let on_clicked = Rc::new(on_clicked);
+
+        for (i, (id, name)) in artists.iter().enumerate() {
+            if i > 0 {
+                let separator = gtk::Label::new(Some(", "));
+                separator.add_css_class("body");
+                links_box.append(&separator);
+            }
+
+            let button = gtk::Button::builder()
+                .label(name)
+                .css_classes(["flat", "subtitle-link-button"])
+                .build();
+
+            let id = id.clone();
+            let cb = Rc::clone(&on_clicked);
+            button.connect_clicked(move |_| {
+                cb(&id);
+            });
+
+            links_box.append(&button);
+        }
     }
 
     // Weak references

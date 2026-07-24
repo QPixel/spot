@@ -22,7 +22,7 @@ mod imp {
         pub login_with_spotify_button: TemplateChild<gtk::Button>,
 
         #[template_child]
-        pub auth_error_container: TemplateChild<gtk::Revealer>,
+        pub status_stack: TemplateChild<gtk::Stack>,
     }
 
     #[glib::object_subclass]
@@ -83,7 +83,19 @@ impl LoginWindow {
 
     fn show_auth_error(&self, shown: bool) {
         let widget = self.imp();
-        widget.auth_error_container.set_reveal_child(shown);
+        widget
+            .status_stack
+            .set_visible_child_name(if shown { "error" } else { "notice" });
+    }
+
+    fn show_login_error(&self) {
+        self.imp()
+            .status_stack
+            .set_visible_child_name("login_error");
+    }
+
+    fn reset_status(&self) {
+        self.imp().status_stack.set_visible_child_name("notice");
     }
 }
 
@@ -135,12 +147,18 @@ impl Login {
     }
 
     fn hide(&self) {
+        self.login_window.reset_status();
         self.window().set_visible(false);
+    }
+
+    fn reveal_not_premium(&self) {
+        self.show_self();
+        self.login_window.show_auth_error(true);
     }
 
     fn reveal_error(&self) {
         self.show_self();
-        self.login_window.show_auth_error(true);
+        self.login_window.show_login_error();
     }
 
     fn open_login_url(&self, url: Url) {
@@ -155,6 +173,9 @@ impl EventListener for Login {
         match event {
             AppEvent::LoginEvent(LoginEvent::LoginCompleted) => {
                 self.hide();
+            }
+            AppEvent::LoginEvent(LoginEvent::NotPremium) => {
+                self.reveal_not_premium();
             }
             AppEvent::LoginEvent(LoginEvent::LoginFailed) => {
                 self.reveal_error();

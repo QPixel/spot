@@ -1,3 +1,9 @@
+use super::api_models::WithImages;
+use super::cache::{CacheExpiry, CacheManager, CachePolicy, FetchResult};
+use super::client::*;
+use crate::app::models::*;
+use crate::app::state::CARD_BATCH_SIZE;
+use crate::auth::TokenStore;
 use futures::future::BoxFuture;
 use futures::{join, FutureExt};
 use regex::Regex;
@@ -5,19 +11,40 @@ use serde::de::DeserializeOwned;
 use serde_json::from_slice;
 use std::convert::Into;
 use std::future::Future;
-use super::api_models::WithImages;
-use super::cache::{CacheExpiry, CacheManager, CachePolicy, FetchResult};
-use super::client::*;
-use crate::app::models::*;
-use crate::app::state::CARD_BATCH_SIZE;
-use crate::player::TokenStore;
 
 pub type SpotifyResult<T> = Result<T, SpotifyApiError>;
+
+/// Convert a raw Spotify search response into the domain `SearchResults`.
+/// Each category is optional: scoped searches only populate one of them.
+fn raw_search_into_results(raw: RawSearchResults) -> SearchResults {
+    let albums = raw
+        .albums
+        .map(|page| page.into_iter().map(Into::into).collect())
+        .unwrap_or_default();
+    let artists = raw
+        .artists
+        .map(|page| page.into_iter().map(Into::into).collect())
+        .unwrap_or_default();
+    let playlists = raw
+        .playlists
+        .map(|page| page.into_iter().map(Into::into).collect())
+        .unwrap_or_default();
+    let tracks = raw.tracks.map(SongBatch::from).unwrap_or_default();
+
+    SearchResults {
+        albums,
+        artists,
+        playlists,
+        tracks,
+    }
+}
 
 pub trait SpotifyApiClient {
     fn get_artist(&self, id: &str) -> BoxFuture<SpotifyResult<ArtistDescription>>;
 
     fn get_album(&self, id: &str) -> BoxFuture<SpotifyResult<AlbumFullDescription>>;
+
+    fn get_track(&self, id: &str) -> BoxFuture<SpotifyResult<SongDescription>>;
 
     fn get_album_tracks(
         &self,
@@ -76,6 +103,16 @@ pub trait SpotifyApiClient {
     fn search(
         &self,
         query: &str,
+        offset: usize,
+        limit: usize,
+    ) -> BoxFuture<SpotifyResult<SearchResults>>;
+
+    /// Search restricted to a single category. Only the field of `SearchResults`
+    /// matching `search_type` is populated.
+    fn search_scoped(
+        &self,
+        query: &str,
+        search_type: SearchType,
         offset: usize,
         limit: usize,
     ) -> BoxFuture<SpotifyResult<SearchResults>>;
@@ -146,6 +183,7 @@ enum RiffCacheKey<'a> {
     Album(&'a str),
     AlbumLiked(&'a str),
     AlbumTracks(&'a str, usize, usize),
+    Track(&'a str),
     Playlist(&'a str),
     PlaylistTracks(&'a str, usize, usize),
     ArtistAlbums(&'a str, usize, usize),
@@ -165,6 +203,7 @@ impl RiffCacheKey<'_> {
             Self::AlbumTracks(id, offset, limit) => {
                 format!("album_item_{id}_{offset}_{limit}.json")
             }
+            Self::Track(id) => format!("track_{id}.json"),
             Self::AlbumLiked(id) => format!("album_liked_{id}.json"),
             Self::Playlist(id) => format!("playlist_{id}.json"),
             Self::PlaylistTracks(id, offset, limit) => {
@@ -186,8 +225,7 @@ impl RiffCacheKey<'_> {
 lazy_static! {
     pub static ref ME_TRACKS_CACHE: Regex = Regex::new(r"^me_tracks_\w+_\w+\.json$").unwrap();
     pub static ref ME_ALBUMS_CACHE: Regex = Regex::new(r"^me_albums_\w+_\w+\.json$").unwrap();
-    pub static ref ME_PLAYLISTS_CACHE: Regex =
-        Regex::new(r"^me_playlists_\w+_\w+\.json$").unwrap();
+    pub static ref ME_PLAYLISTS_CACHE: Regex = Regex::new(r"^me_playlists_\w+_\w+\.json$").unwrap();
     pub static ref USER_CACHE: Regex =
         Regex::new(r"^me_(albums|playlists|tracks)_\w+_\w+\.json$").unwrap();
 }
@@ -216,6 +254,30 @@ impl CachedSpotifyClient {
             debug!("Forcing cache");
             CachePolicy::IgnoreExpiry
         }
+    }
+
+    /// Shared implementation for `search` and `search_scoped`: run a search for
+    /// the given comma-separated `types` and map the raw response into the
+    /// domain `SearchResults`.
+    fn search_types(
+        &self,
+        query: &str,
+        types: &'static str,
+        offset: usize,
+        limit: usize,
+    ) -> BoxFuture<SpotifyResult<SearchResults>> {
+        let query = query.to_owned();
+        Box::pin(async move {
+            let raw = self
+                .client
+                .search(query, types, offset, limit)
+                .send()
+                .await?
+                .deserialize()
+                .ok_or(SpotifyApiError::NoContent)?;
+
+            Ok(raw_search_into_results(raw))
+        })
     }
 
     async fn wrap_write<T, O, F>(write: &F, etag: Option<String>) -> SpotifyResult<FetchResult>
@@ -407,10 +469,7 @@ impl SpotifyApiClient for CachedSpotifyClient {
         Box::pin(async move {
             let _ = self.cache.set_expired_pattern(&ME_PLAYLISTS_CACHE).await;
 
-            self.client
-                .follow_playlist(&id)
-                .send_no_response()
-                .await?;
+            self.client.follow_playlist(&id).send_no_response().await?;
             Ok(())
         })
     }
@@ -420,7 +479,10 @@ impl SpotifyApiClient for CachedSpotifyClient {
 
         Box::pin(async move {
             let _ = self.cache.set_expired_pattern(&ME_PLAYLISTS_CACHE).await;
-            let _ = self.cache.set_expired_pattern(&playlist_cache_key(&id)).await;
+            let _ = self
+                .cache
+                .set_expired_pattern(&playlist_cache_key(&id))
+                .await;
 
             self.client
                 .unfollow_playlist(&id)
@@ -472,6 +534,20 @@ impl SpotifyApiClient for CachedSpotifyClient {
             album.description.is_liked = liked?[0];
 
             Ok(album)
+        })
+    }
+
+    fn get_track(&self, id: &str) -> BoxFuture<SpotifyResult<SongDescription>> {
+        let id = id.to_owned();
+
+        Box::pin(async move {
+            let track: TrackItem = self
+                .cache_get_or_write(RiffCacheKey::Track(&id), None, |etag| {
+                    self.client.get_track(&id).etag(etag).send()
+                })
+                .await?;
+
+            Ok(track.into())
         })
     }
 
@@ -630,19 +706,22 @@ impl SpotifyApiClient for CachedSpotifyClient {
                 });
 
             let is_followed = async {
-                self.client.is_artist_followed(&id).send().await
+                self.client
+                    .is_artist_followed(&id)
+                    .send()
+                    .await
                     .ok()
                     .and_then(|r| r.deserialize())
                     .and_then(|v: Vec<bool>| v.first().copied())
                     .unwrap_or(false)
             };
 
-            let (artist, albums, top_tracks, is_followed) = join!(artist, albums, top_tracks, is_followed);
+            let (artist, albums, top_tracks, is_followed) =
+                join!(artist, albums, top_tracks, is_followed);
 
             let artist = artist?;
-            let photo = ImageSet::from_images(
-                artist.images().iter().map(|i| (i.width_px(), i.url.clone())),
-            );
+            let photo =
+                ImageSet::from_images(artist.images().iter().map(|i| (i.width, i.url.clone())));
             let result = ArtistDescription {
                 id: artist.id,
                 name: artist.name,
@@ -661,33 +740,17 @@ impl SpotifyApiClient for CachedSpotifyClient {
         offset: usize,
         limit: usize,
     ) -> BoxFuture<SpotifyResult<SearchResults>> {
-        let query = query.to_owned();
+        self.search_types(query, "album,track,artist,playlist", offset, limit)
+    }
 
-        Box::pin(async move {
-            let results = self
-                .client
-                .search(query, offset, limit)
-                .send()
-                .await?
-                .deserialize()
-                .ok_or(SpotifyApiError::NoContent)?;
-
-            let albums = results
-                .albums
-                .unwrap_or_default()
-                .into_iter()
-                .map(|saved| saved.into())
-                .collect::<Vec<AlbumDescription>>();
-
-            let artists = results
-                .artists
-                .unwrap_or_default()
-                .into_iter()
-                .map(|saved| saved.into())
-                .collect::<Vec<ArtistSummary>>();
-
-            Ok(SearchResults { albums, artists })
-        })
+    fn search_scoped(
+        &self,
+        query: &str,
+        search_type: SearchType,
+        offset: usize,
+        limit: usize,
+    ) -> BoxFuture<SpotifyResult<SearchResults>> {
+        self.search_types(query, search_type.spotify_type(), offset, limit)
     }
 
     fn get_user_playlists(
@@ -734,9 +797,8 @@ impl SpotifyApiClient for CachedSpotifyClient {
             let (user, playlists) = join!(user, playlists);
 
             let user = user?;
-            let photo = ImageSet::from_images(
-                user.images().iter().map(|i| (i.width_px(), i.url.clone())),
-            );
+            let photo =
+                ImageSet::from_images(user.images().iter().map(|i| (i.width, i.url.clone())));
             let result = UserDescription {
                 id: user.id,
                 name: user.display_name,
@@ -908,63 +970,11 @@ impl SpotifyApiClient for CachedSpotifyClient {
 
     fn follow_artist(&self, id: &str) -> BoxFuture<SpotifyResult<()>> {
         let id = id.to_owned();
-        Box::pin(async move {
-            self.client.follow_artist(&id).send_no_response().await
-        })
+        Box::pin(async move { self.client.follow_artist(&id).send_no_response().await })
     }
 
     fn unfollow_artist(&self, id: &str) -> BoxFuture<SpotifyResult<()>> {
         let id = id.to_owned();
-        Box::pin(async move {
-            self.client.unfollow_artist(&id).send_no_response().await
-        })
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-
-    use crate::api::api_models::*;
-
-    #[test]
-    fn test_search_query() {
-        let query = SearchQuery {
-            query: "test".to_string(),
-            types: vec![SearchType::Album, SearchType::Artist],
-            limit: 5,
-            offset: 0,
-        };
-
-        assert_eq!(
-            query.into_query_string(),
-            "type=album,artist&q=test&offset=0&limit=5&market=from_token"
-        );
-    }
-
-    #[test]
-    fn test_search_query_spaces_and_stuff() {
-        let query = SearchQuery {
-            query: "test??? wow".to_string(),
-            types: vec![SearchType::Album],
-            limit: 5,
-            offset: 0,
-        };
-
-        assert_eq!(
-            query.into_query_string(),
-            "type=album&q=test+wow&offset=0&limit=5&market=from_token"
-        );
-    }
-
-    #[test]
-    fn test_search_query_encoding() {
-        let query = SearchQuery {
-            query: "кириллица".to_string(),
-            types: vec![SearchType::Album],
-            limit: 5,
-            offset: 0,
-        };
-
-        assert_eq!(query.into_query_string(), "type=album&q=%D0%BA%D0%B8%D1%80%D0%B8%D0%BB%D0%BB%D0%B8%D1%86%D0%B0&offset=0&limit=5&market=from_token");
+        Box::pin(async move { self.client.unfollow_artist(&id).send_no_response().await })
     }
 }

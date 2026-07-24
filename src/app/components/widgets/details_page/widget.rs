@@ -7,15 +7,13 @@ use libadwaita::prelude::*;
 
 use crate::app::components::{
     display_add_css_provider, EventListener, HeaderBarComponent, HeaderBarModel, HeaderBarWidget,
+    CLAMP_MAX_SIZE,
 };
 use crate::app::dispatch::Worker;
 use crate::app::loader::ImageLoader;
 use crate::app::models::ImageSet;
 
 use super::{DetailsHeader, HeaderImageShape, HEADER_IMAGE_SIZE};
-
-/// Maximum width (in pixels) for both the header and content clamps, keeping them aligned.
-const CLAMP_MAX_SIZE: i32 = 1600;
 
 // DetailsPage
 
@@ -137,7 +135,10 @@ impl DetailsPage {
 
     /// Create a [`HeaderBarComponent`] bound to this page's headerbar widget.
     /// The returned listener should be added to the page's children.
-    pub fn create_headerbar_listener(&self, model: Rc<impl HeaderBarModel + 'static>) -> Box<dyn EventListener> {
+    pub fn create_headerbar_listener(
+        &self,
+        model: Rc<impl HeaderBarModel + 'static>,
+    ) -> Box<dyn EventListener> {
         Box::new(HeaderBarComponent::new(
             self.headerbar().unwrap().clone(),
             model,
@@ -169,7 +170,10 @@ impl DetailsPage {
                     if let Some(header) = weak_header.upgrade() {
                         let texture = gdk::Texture::for_pixbuf(pixbuf);
                         header.imp().image.set_paintable(Some(&texture));
-                        header.imp().image_box.remove_css_class("details-header__image-placeholder");
+                        header
+                            .imp()
+                            .image_box
+                            .remove_css_class("details-header__image-placeholder");
                     }
                     scroll_child.add_css_class("details-page--loaded");
                 }

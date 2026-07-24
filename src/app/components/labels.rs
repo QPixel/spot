@@ -13,6 +13,12 @@ lazy_static! {
     // translators: This is part of a contextual menu attached to a single track; this entry removes a track from the play queue.
     pub static ref REMOVE_FROM_QUEUE: String = gettext("Remove from queue");
 
+    // translators: This is part of a contextual menu attached to a playlist in the sidebar; this entry starts playing the playlist from the first track.
+    pub static ref PLAY: String = gettext("Play");
+
+    // translators: This is part of a contextual menu attached to a playlist in the sidebar; this entry starts playing the playlist in shuffle mode.
+    pub static ref SHUFFLE: String = gettext("Shuffle");
+
     // translators: This is part of a contextual menu attached to a playlist in the sidebar; this entry deletes a playlist owned by the user.
     pub static ref DELETE_PLAYLIST: String = gettext("Delete playlist");
 
@@ -29,13 +35,13 @@ pub fn add_to_playlist_label(playlist: &str) -> String {
     gettext!("Add to {}", playlist)
 }
 
-pub fn n_songs_selected_label(n: usize) -> String {
+pub fn n_tracks_selected_label(n: usize) -> String {
     // this is just to fool xgettext, it doesn't like macros (or rust for that matter) :(
     if cfg!(debug_assertions) {
         // translators: This shows up when in selection mode. This text should be as short as possible.
-        ngettext("{} song selected", "{} songs selected", n as u32);
+        ngettext("{} track selected", "{} tracks selected", n as u32);
     }
-    ngettext!("{} song selected", "{} songs selected", n as u32, n)
+    ngettext!("{} track selected", "{} tracks selected", n as u32, n)
 }
 
 pub fn more_from_label(artist: &str) -> String {

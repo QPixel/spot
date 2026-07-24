@@ -17,6 +17,7 @@ pub enum PaginationTarget {
     UserPlaylists(String),
     PlaylistTracks(String),
     AlbumTracks(String),
+    SearchScope,
 }
 
 // Actions that affect any "screen" that we push over time
@@ -37,7 +38,15 @@ pub enum BrowserAction {
     UpdatePlaylistName(PlaylistSummary),
     AppendPlaylistTracks(String, Box<SongBatch>),
     Search(String),
+    /// Used to tell the currently loaded Details screen to play a song
+    PlaySong(String),
     SetSearchResults(Box<SearchResults>),
+    /// Change the active search filter (`None` = combined results).
+    SetSearchFilter(Option<SearchType>),
+    /// Replace the results of the scoped search view (artists/albums/playlists/tracks).
+    SetSearchScopeResults(SearchType, String, Box<SearchResults>),
+    /// Append a page of results to the scoped search view.
+    AppendSearchScopeResults(SearchType, String, Box<SearchResults>),
     SetArtistDetails(Box<ArtistDescription>),
     AppendArtistReleases(String, Vec<AlbumDescription>),
     NavigationPush(ScreenName),
@@ -85,11 +94,17 @@ pub enum BrowserEvent {
     PlaylistTracksRemoved(String),
     SearchUpdated,
     SearchResultsUpdated,
+    /// The active search filter changed.
+    SearchFilterChanged,
+    /// The scoped search view's results changed.
+    SearchScopeUpdated(SearchType),
     ArtistDetailsUpdated(String),
     NavigationPushed(ScreenName),
     NavigationPopped,
     NavigationPoppedTo(ScreenName),
     AlbumSaved(String),
+    /// Notifies a DetailsModel that a song is requested
+    SongPlaybackRequested(String),
     AlbumUnsaved(String),
     PlaylistSaved(String),
     PlaylistUnsaved(String),

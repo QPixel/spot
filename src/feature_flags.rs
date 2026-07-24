@@ -5,31 +5,37 @@ const SETTINGS: &str = "dev.diegovsky.Riff";
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FeatureFlag {
     /*
-     Selection mode allows users to select multiple songs to queue, save, or remove.
-     It has visually bugged buttons in the page's header across all pages that use it.
-     */
+    Selection mode allows users to select multiple songs to queue, save, or remove.
+    It has visually bugged buttons in the page's header across all pages that use it.
+    */
     SelectMode,
     /*
-     Creating new playlists workflow needs to be flushed out further before launching. Currently,
-     users can create a new play list with no songs but interacting with the playlist is awkward.
-     Furthermore, it is possible to crash the application by viewing a newly created playlist and
-     then viewing another playlist in the same session.
-     */
+    Creating new playlists workflow needs to be flushed out further before launching. Currently,
+    users can create a new play list with no songs but interacting with the playlist is awkward.
+    Furthermore, it is possible to crash the application by viewing a newly created playlist and
+    then viewing another playlist in the same session.
+    */
     CreateNewPlaylist,
     /*
-     Device selector allows switching playback between Spotify Connect devices.
-     */
+    Device selector allows switching playback between Spotify Connect devices.
+    */
     DeviceSelector,
     /*
-     Debug CSS shows alignment and rendering debug overlays to help identify layout issues.
-     Only available in debug builds.
-     */
+    Debug CSS shows alignment and rendering debug overlays to help identify layout issues.
+    Only available in debug builds.
+    */
     DebugCss,
     /*
-     Debug Skeleton adds a toggle button to the header bar that forces all pages into their
-     skeleton/loading state. Only available in debug builds.
-     */
+    Debug Skeleton adds a toggle button to the header bar that forces all pages into their
+    skeleton/loading state. Only available in debug builds.
+    */
     DebugSkeleton,
+    /*
+    Audio normalisation settings allow fine-tuning of loudness normalisation parameters
+    (type, method, pre-gain, threshold, attack, release, knee). The feature is still
+    being validated for usability before exposing to all users.
+    */
+    Normalisation,
 }
 
 impl FeatureFlag {
@@ -37,6 +43,7 @@ impl FeatureFlag {
         FeatureFlag::SelectMode,
         FeatureFlag::CreateNewPlaylist,
         FeatureFlag::DeviceSelector,
+        FeatureFlag::Normalisation,
         FeatureFlag::DebugCss,
         FeatureFlag::DebugSkeleton,
     ];
@@ -50,6 +57,7 @@ impl FeatureFlag {
             FeatureFlag::SelectMode => "feature-select-mode",
             FeatureFlag::CreateNewPlaylist => "feature-create-new-playlist",
             FeatureFlag::DeviceSelector => "feature-device-selector",
+            FeatureFlag::Normalisation => "feature-normalisation",
             FeatureFlag::DebugCss => "feature-debug-css",
             FeatureFlag::DebugSkeleton => "feature-debug-skeleton",
         }
@@ -60,6 +68,7 @@ impl FeatureFlag {
             FeatureFlag::SelectMode => "Select Mode",
             FeatureFlag::CreateNewPlaylist => "Create New Playlist",
             FeatureFlag::DeviceSelector => "Device Selector",
+            FeatureFlag::Normalisation => "Audio Normalisation",
             FeatureFlag::DebugCss => "Debug CSS",
             FeatureFlag::DebugSkeleton => "Debug Skeleton",
         }
@@ -68,17 +77,16 @@ impl FeatureFlag {
     pub fn description(&self) -> &'static str {
         match self {
             FeatureFlag::SelectMode => {
-                "Enable selection mode to select multiple songs for queuing, saving, or removing."
+                "Enable selection mode to select multiple tracks for queuing, saving, or removing."
             }
-            FeatureFlag::CreateNewPlaylist => {
-                "Enable the New Playlist button in the sidebar."
-            }
+            FeatureFlag::CreateNewPlaylist => "Enable the New Playlist button in the sidebar.",
             FeatureFlag::DeviceSelector => {
                 "Enable the device selector in the Now Playing headerbar."
             }
-            FeatureFlag::DebugCss => {
-                "Show alignment and rendering debug overlays."
+            FeatureFlag::Normalisation => {
+                "Show audio normalisation settings for fine-tuning loudness between tracks."
             }
+            FeatureFlag::DebugCss => "Show alignment and rendering debug overlays.",
             FeatureFlag::DebugSkeleton => {
                 "Toggle between loaded content and skeleton loading states."
             }
@@ -109,5 +117,6 @@ mod tests {
         assert!(!FeatureFlag::SelectMode.is_debug_only());
         assert!(!FeatureFlag::CreateNewPlaylist.is_debug_only());
         assert!(!FeatureFlag::DeviceSelector.is_debug_only());
+        assert!(!FeatureFlag::Normalisation.is_debug_only());
     }
 }

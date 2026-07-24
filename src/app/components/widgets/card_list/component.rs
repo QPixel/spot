@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use super::card_view_menu::{effective_sort, CardViewMenu};
+use super::filter_toggle::FilterToggle;
 use super::page_widget::CardListWidget;
 use super::traits::CardListPageModel;
 use super::widget::CardList;
@@ -95,6 +96,31 @@ impl<M: CardListPageModel + 'static> CardListComponent<M> {
             dispatcher,
         );
 
+        // Create filter toggle if the model provides filter options
+        let filter_options = model.filter_options();
+        if !filter_options.is_empty() {
+            let status_page_ref = page_widget.status_page().clone();
+            let filter_widget = FilterToggle::new(
+                &filter_options,
+                Rc::clone(&card_list),
+                move |category, visible_count| {
+                    if category.is_empty() {
+                        status_page_ref.set_visible(false);
+                    } else if visible_count == 0 {
+                        status_page_ref
+                            .set_title(&gettextrs::gettext("No items found for this filter"));
+                        status_page_ref.set_visible(true);
+                    } else {
+                        status_page_ref.set_visible(false);
+                    }
+                },
+            );
+            filter_widget.set_margin_start(CARD_LIST_MARGIN);
+            filter_widget.set_margin_end(CARD_LIST_MARGIN);
+            filter_widget.set_margin_top(CARD_LIST_MARGIN);
+            page_widget.prepend(&filter_widget);
+        }
+
         Self {
             model,
             page_widget,
@@ -122,7 +148,9 @@ impl<M: CardListPageModel + 'static> EventListener for CardListComponent<M> {
                 self.card_list.widget().remove_all();
                 self.page_widget.status_page().set_visible(false);
             }
-            AppEvent::BrowserEvent(BrowserEvent::CardLayoutChanged(_) | BrowserEvent::CardSizeChanged(_)) => {
+            AppEvent::BrowserEvent(
+                BrowserEvent::CardLayoutChanged(_) | BrowserEvent::CardSizeChanged(_),
+            ) => {
                 self.card_list.update_layout(self.layout.get());
                 self.card_list.update_size(self.size.get());
                 self.view_menu.sync(self.layout.get());
@@ -132,7 +160,9 @@ impl<M: CardListPageModel + 'static> EventListener for CardListComponent<M> {
 
         if self.model.should_refresh(event) {
             self.card_list.remove_placeholders();
-            self.page_widget.status_page().set_visible(!self.model.has_items());
+            self.page_widget
+                .status_page()
+                .set_visible(!self.model.has_items());
             if self.model.has_items() {
                 let adj = self.page_widget.scrolled_window().vadjustment();
                 if adj.upper() <= adj.page_size() && self.model.has_more() {
@@ -213,7 +243,10 @@ impl EmbeddedCardList {
 
 impl EventListener for EmbeddedCardList {
     fn on_event(&mut self, event: &AppEvent) {
-        if let AppEvent::BrowserEvent(BrowserEvent::CardLayoutChanged(_) | BrowserEvent::CardSizeChanged(_)) = event {
+        if let AppEvent::BrowserEvent(
+            BrowserEvent::CardLayoutChanged(_) | BrowserEvent::CardSizeChanged(_),
+        ) = event
+        {
             self.card_list.update_layout(self.layout.get());
             self.card_list.update_size(self.size.get());
             self.view_menu.sync(self.layout.get());

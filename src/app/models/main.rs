@@ -3,7 +3,6 @@ use std::{
     str::FromStr,
 };
 
-
 /// A set of image URLs at different sizes from Spotify.
 ///
 /// An `ImageSet` is guaranteed to contain at least one image. Construction
@@ -52,7 +51,7 @@ impl ImageSet {
 }
 
 // A batch of whatever
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Batch {
     // What offset does the batch start at
     pub offset: usize,
@@ -107,10 +106,37 @@ pub struct AlbumRef {
     pub name: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SearchResults {
     pub albums: Vec<AlbumDescription>,
     pub artists: Vec<ArtistSummary>,
+    pub playlists: Vec<PlaylistDescription>,
+    pub tracks: SongBatch,
+}
+
+/// The category a scoped ("sub") search page searches within.
+///
+/// Selecting a filter on the main search page opens a dedicated page scoped to
+/// one of these categories, using the Spotify search API restricted to the
+/// matching `type`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchType {
+    Artists,
+    Albums,
+    Playlists,
+    Tracks,
+}
+
+impl SearchType {
+    /// The Spotify search API `type` query value.
+    pub fn spotify_type(self) -> &'static str {
+        match self {
+            Self::Artists => "artist",
+            Self::Albums => "album",
+            Self::Playlists => "playlist",
+            Self::Tracks => "track",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -123,6 +149,7 @@ pub struct AlbumDescription {
     pub songs: SongBatch,
     pub is_liked: bool,
     pub popularity: u32,
+    pub album_type: Option<String>,
 }
 
 impl AlbumDescription {
@@ -193,8 +220,9 @@ pub struct SongDescription {
     pub title: String,
     pub artists: Vec<ArtistRef>,
     pub album: AlbumRef,
-    pub duration: u32,
+    pub duration_ms: u32,
     pub art: Option<ImageSet>,
+    pub explicit: bool,
 }
 
 impl SongDescription {
@@ -217,10 +245,11 @@ impl Hash for SongDescription {
 pub struct SongState {
     pub is_playing: bool,
     pub is_selected: bool,
+    pub is_liked: bool,
 }
 
 // A batch of SONGS
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SongBatch {
     pub songs: Vec<SongDescription>,
     pub batch: Batch,
@@ -340,9 +369,10 @@ mod tests {
                 id: "".to_string(),
                 name: "".to_string(),
             },
-            duration: 1000,
+            duration_ms: 1000,
             art: None,
             track_number: None,
+            explicit: false,
         }
     }
 

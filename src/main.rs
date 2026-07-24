@@ -15,12 +15,16 @@ use gio::ApplicationFlags;
 use gio::SimpleAction;
 use gtk::prelude::*;
 
+mod about;
 mod api;
 mod app;
+mod audio_engine;
+mod auth;
 mod config;
 mod connect;
 mod dbus;
 pub mod feature_flags;
+mod inhibitor;
 mod player;
 mod settings;
 
@@ -106,7 +110,7 @@ fn main() {
 
     // Couple of actions used with shortcuts
     register_actions(&gtk_app, sender.clone());
-    setup_credits(builder.object::<libadwaita::AboutDialog>("about").unwrap());
+    about::setup_about(builder.object::<libadwaita::AboutDialog>("about").unwrap());
 
     // Main app logic is hooked up here
     let app = App::new(
@@ -197,23 +201,6 @@ fn setup_gtk(settings: &settings::RiffSettings, pkgdatadir: &str, localedir: &st
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
     }
-}
-
-fn setup_credits(about: libadwaita::AboutDialog) {
-    // Read from a couple files at compile time and update the about dialog
-    let authors: Vec<&str> = include_str!("../AUTHORS")
-        .trim_end_matches('\n')
-        .split('\n')
-        .collect();
-    let translators = include_str!("../TRANSLATORS").trim_end_matches('\n');
-    let artists: Vec<&str> = include_str!("../ARTISTS")
-        .trim_end_matches('\n')
-        .split('\n')
-        .collect();
-    about.set_version(config::VERSION);
-    about.set_developers(&authors);
-    about.set_translator_credits(translators);
-    about.set_artists(&artists);
 }
 
 fn register_actions(app: &gtk::Application, sender: UnboundedSender<AppAction>) {

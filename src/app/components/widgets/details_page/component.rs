@@ -3,7 +3,10 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use super::{is_playback_event, DetailsPage, PageModel};
-use crate::app::components::{CardLayout, CardList, CardListModel, CardSize, Component, EmbeddedCardList, EventListener, HeaderBarModel, Playlist, PlaylistModel, SortOrder};
+use crate::app::components::{
+    CardLayout, CardList, CardListModel, CardSize, Component, EmbeddedCardList, EventListener,
+    FilterToggle, HeaderBarModel, Playlist, PlaylistModel, SortOrder,
+};
 use crate::app::dispatch::Worker;
 use crate::app::{ActionDispatcher, AppEvent};
 
@@ -30,7 +33,13 @@ impl<M: PageModel + 'static> DetailsPageComponent<M> {
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let page = DetailsPage::new(model.header_image_shape(), &content);
         let headerbar = page.create_headerbar_listener(headerbar_model);
-        let mut c = Self { model, worker, page, content, children: vec![headerbar] };
+        let mut c = Self {
+            model,
+            worker,
+            page,
+            content,
+            children: vec![headerbar],
+        };
         c.wire();
         c
     }
@@ -53,12 +62,17 @@ impl<M: PageModel + 'static> DetailsPageComponent<M> {
         let listview = gtk::ListView::new(None::<gtk::NoSelection>, None::<gtk::ListItemFactory>);
         listview.set_margin_bottom(16);
         self.content.append(&listview);
-        let playlist = Box::new(Playlist::new(listview, self.model.clone(), self.worker.clone()));
+        let playlist = Box::new(Playlist::new(
+            listview,
+            self.model.clone(),
+            self.worker.clone(),
+        ));
         self.children.push(playlist);
     }
 
     /// Create an [`EmbeddedCardList`] with view controls, appending it to the content box
     /// and registering it as an event listener. Packs the view button into the headerbar.
+    /// If the model provides filter options, a filter toggle bar is shown inline with the label.
     pub fn create_embedded_card_list(
         &mut self,
         label: Option<&str>,
@@ -70,20 +84,78 @@ impl<M: PageModel + 'static> DetailsPageComponent<M> {
     ) where
         M: CardListModel,
     {
-        if let Some(text) = label {
+        let filter_options = self.model.filter_options();
+        let has_filters = !filter_options.is_empty();
+
+        let card_list = Rc::new(CardList::new());
+        card_list.widget().set_margin_bottom(16);
+
+        if has_filters {
+            // Header row: label (left, hexpand) + filter toggle (right, shrinkable)
+            let header_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+            header_row.set_margin_bottom(10);
+
+            if let Some(text) = label {
+                let lbl = gtk::Label::builder()
+                    .label(text)
+                    .halign(gtk::Align::Start)
+                    .hexpand(true)
+                    .css_classes(["title-4", "skeleton"])
+                    .build();
+                header_row.append(&lbl);
+            }
+
+            // Empty state label shown when a filter matches nothing
+            let empty_label = gtk::Label::builder()
+                .label("")
+                .halign(gtk::Align::Center)
+                .valign(gtk::Align::Center)
+                .margin_top(24)
+                .margin_bottom(24)
+                .css_classes(["dim-label"])
+                .visible(false)
+                .build();
+
+            let empty_label_ref = empty_label.clone();
+            let filter_widget = FilterToggle::new(
+                &filter_options,
+                Rc::clone(&card_list),
+                move |category, visible_count| {
+                    if category.is_empty() {
+                        empty_label_ref.set_visible(false);
+                    } else if visible_count == 0 {
+                        let msg = gettextrs::gettext("No items found for this filter");
+                        empty_label_ref.set_label(&msg);
+                        empty_label_ref.set_visible(true);
+                    } else {
+                        empty_label_ref.set_visible(false);
+                    }
+                },
+            );
+
+            header_row.append(&filter_widget);
+            self.content.append(&header_row);
+            self.content.append(&empty_label);
+        } else if let Some(text) = label {
+            // No filters - just append a plain label
             let lbl = gtk::Label::builder()
                 .label(text)
                 .halign(gtk::Align::Start)
+                .hexpand(true)
                 .css_classes(["title-4", "skeleton"])
                 .margin_bottom(10)
                 .build();
             self.content.append(&lbl);
         }
 
-        let card_list = Rc::new(CardList::new());
-        card_list.widget().set_margin_bottom(16);
         self.content.append(card_list.widget());
-        card_list.bind(&self.model, self.worker.clone(), CardLayout::Vertical, CardSize::Large);
+
+        card_list.bind(
+            &self.model,
+            self.worker.clone(),
+            CardLayout::Vertical,
+            CardSize::Large,
+        );
         card_list.show_placeholders();
 
         let embedded = EmbeddedCardList::new(
@@ -144,11 +216,11 @@ impl<M: PageModel + 'static> DetailsPageComponent<M> {
             ));
         }
 
-        if self.model.has_subtitle_link() {
-            self.page.header().connect_subtitle_clicked(clone!(
+        if self.model.has_share_button() {
+            self.page.header().connect_share(clone!(
                 #[weak(rename_to = m)]
                 self.model,
-                move || m.on_subtitle_clicked()
+                move || m.on_share_clicked()
             ));
         }
 
@@ -175,6 +247,26 @@ impl<M: PageModel + 'static> DetailsPageComponent<M> {
             let subtitle = self.model.get_subtitle().unwrap_or_default();
             self.page.set_details(&title, &subtitle);
         }
+
+        // Set subtitle links if the model provides them
+        let links = self.model.get_subtitle_links();
+        if !links.is_empty() {
+            let artists: Vec<(String, String)> = links
+                .iter()
+                .map(|a| (a.id.clone(), a.name.clone()))
+                .collect();
+            self.page.header().set_subtitle_links(
+                &artists,
+                clone!(
+                    #[weak(rename_to = m)]
+                    self.model,
+                    move |id| {
+                        m.navigate_to_subtitle_link(id);
+                    }
+                ),
+            );
+        }
+
         if let Some(caption) = self.model.get_caption() {
             self.page.header().set_caption(&caption);
             self.page.header().set_caption_visible(true);
@@ -185,15 +277,28 @@ impl<M: PageModel + 'static> DetailsPageComponent<M> {
                 self.page.header().set_like_visible(false);
             }
         }
-        self.page.load_artwork_or_finish(self.model.get_artwork().as_ref(), &self.worker);
+        self.page
+            .load_artwork_or_finish(self.model.get_artwork().as_ref(), &self.worker);
     }
 
     /// Standard event handling. Returns true if the event was consumed.
     pub fn handle_event(&self, event: &AppEvent) -> bool {
+        match event {
+            AppEvent::BrowserEvent(crate::app::BrowserEvent::SongPlaybackRequested(id))
+                if self.model.has_play_button() =>
+            {
+                self.model.start_play(id);
+                return true;
+            }
+            _ => (),
+        }
+
         if self.model.should_refresh_details(event) {
             self.refresh_details();
             if self.model.has_play_button() {
-                self.page.header().set_playing(self.model.source_is_playing());
+                self.page
+                    .header()
+                    .set_playing(self.model.source_is_playing());
             }
             return true;
         }

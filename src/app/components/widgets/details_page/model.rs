@@ -4,7 +4,9 @@ use std::rc::Rc;
 
 use crate::app::dispatch::ActionDispatcher;
 use crate::app::models::SongListModel;
-use crate::app::state::{PlaybackAction, SelectionAction, SelectionContext, SelectionState};
+use crate::app::state::{
+    BrowserAction, PlaybackAction, SelectionAction, SelectionContext, SelectionState,
+};
 use crate::app::{AppAction, AppModel, AppState};
 use crate::feature_flags::{self, FeatureFlag};
 
@@ -13,11 +15,28 @@ use crate::feature_flags::{self, FeatureFlag};
 #[macro_export]
 macro_rules! impl_playlist_model_base {
     () => {
-        fn is_paused(&self) -> bool { self.base.is_paused() }
-        fn current_song_id(&self) -> Option<String> { self.base.current_song_id() }
-        fn select_song(&self, id: &str) { self.select_song_from_list(&PlaylistModel::song_list_model(self), id); }
-        fn deselect_song(&self, id: &str) { self.base.deselect_song(id); }
-        fn selection(&self) -> Option<Box<dyn Deref<Target = SelectionState> + '_>> { self.base.selection() }
+        fn is_paused(&self) -> bool {
+            self.base.is_paused()
+        }
+        fn current_song_id(&self) -> Option<String> {
+            self.base.current_song_id()
+        }
+        fn select_song(&self, id: &str) {
+            self.select_song_from_list(&PlaylistModel::song_list_model(self), id);
+        }
+        fn deselect_song(&self, id: &str) {
+            self.base.deselect_song(id);
+        }
+        fn selection(&self) -> Option<Box<dyn Deref<Target = SelectionState> + '_>> {
+            self.base.selection()
+        }
+        fn is_song_liked(&self, id: &str) -> bool {
+            self.base.is_song_liked(id)
+        }
+        fn toggle_song_like(&self, id: &str) {
+            let songs = PlaylistModel::song_list_model(self);
+            self.base.toggle_song_like(&songs, id);
+        }
     };
 }
 
@@ -26,11 +45,19 @@ macro_rules! impl_playlist_model_base {
 #[macro_export]
 macro_rules! impl_toggle_play {
     () => {
+        fn start_play(&self, id: &str) {
+            let songs = PlaylistModel::song_list_model(self);
+            match songs.find_index(id) {
+                Some(index) => PlaylistModel::play_song_at(self, index, id),
+                None => error!("Failed to play track {id}"),
+            }
+        }
         fn toggle_play(&self) {
             let songs = PlaylistModel::song_list_model(self);
-            self.base.toggle_playback(self.source_is_playing(), &songs, |pos, id| {
-                PlaylistModel::play_song_at(self, pos, id);
-            });
+            self.base
+                .toggle_playback(self.source_is_playing(), &songs, |pos, id| {
+                    PlaylistModel::play_song_at(self, pos, id);
+                });
         }
 
         fn shuffle_play(&self) {
@@ -55,7 +82,11 @@ pub struct DetailsPageModel {
 
 impl DetailsPageModel {
     pub fn new(id: String, app_model: Rc<AppModel>, dispatcher: Box<dyn ActionDispatcher>) -> Self {
-        Self { id, app_model, dispatcher }
+        Self {
+            id,
+            app_model,
+            dispatcher,
+        }
     }
 
     pub fn new_without_id(app_model: Rc<AppModel>, dispatcher: Box<dyn ActionDispatcher>) -> Self {
@@ -69,6 +100,15 @@ impl DetailsPageModel {
     #[allow(dead_code)]
     pub fn dispatcher(&self) -> &dyn ActionDispatcher {
         &*self.dispatcher
+    }
+
+    /// Copy a shareable link to the clipboard and show a confirmation toast.
+    pub fn share_link(&self, link: &str) {
+        crate::app::components::copy_link_to_clipboard(link);
+        self.dispatcher
+            .dispatch(AppAction::ShowNotification(gettextrs::gettext(
+                "Link copied to clipboard",
+            )));
     }
 
     // Playback state helpers
@@ -120,7 +160,12 @@ impl DetailsPageModel {
 
     /// Toggle play/pause. If not currently playing this source, starts playback
     /// (with shuffle disabled). If already playing, toggles pause/resume.
-    pub fn toggle_playback(&self, source_is_playing: bool, song_list: &SongListModel, play_song_at: impl FnOnce(usize, &str)) {
+    pub fn toggle_playback(
+        &self,
+        source_is_playing: bool,
+        song_list: &SongListModel,
+        play_song_at: impl FnOnce(usize, &str),
+    ) {
         if !source_is_playing {
             self.start_playback(false, song_list, play_song_at);
         } else if self.is_playing() {
@@ -131,22 +176,70 @@ impl DetailsPageModel {
     }
 
     /// Start playback in shuffle mode.
-    pub fn shuffle_playback(&self, song_list: &SongListModel, play_song_at: impl FnOnce(usize, &str)) {
+    pub fn shuffle_playback(
+        &self,
+        song_list: &SongListModel,
+        play_song_at: impl FnOnce(usize, &str),
+    ) {
         self.start_playback(true, song_list, play_song_at);
     }
 
     /// Start playback. When shuffle is enabled, picks a random track; otherwise starts from the first.
-    pub fn start_playback(&self, shuffle: bool, song_list: &SongListModel, play_song_at: impl FnOnce(usize, &str)) {
+    pub fn start_playback(
+        &self,
+        shuffle: bool,
+        song_list: &SongListModel,
+        play_song_at: impl FnOnce(usize, &str),
+    ) {
         if shuffle != self.is_shuffled() {
-            self.dispatcher.dispatch(PlaybackAction::ToggleShuffle.into());
+            self.dispatcher
+                .dispatch(PlaybackAction::ToggleShuffle.into());
         }
         let len = song_list.partial_len();
         if len == 0 {
             return;
         }
-        let index = if shuffle { rand::random::<usize>() % len } else { 0 };
+        let index = if shuffle {
+            rand::random::<usize>() % len
+        } else {
+            0
+        };
         if let Some(song) = song_list.index(index) {
             play_song_at(index, &song.get_id());
+        }
+    }
+
+    // Liked song helpers
+
+    pub fn is_song_liked(&self, id: &str) -> bool {
+        let state = self.app_model.get_state();
+        if let Some(home) = state.browser.home_state() {
+            return home.saved_tracks.get(id).is_some();
+        }
+        false
+    }
+
+    pub fn toggle_song_like(&self, song_list: &SongListModel, id: &str) {
+        let Some(song) = song_list.get(id) else {
+            return;
+        };
+        let song_desc = song.into_description();
+        let song_id = song_desc.id.clone();
+        let api = self.app_model.get_spotify();
+        let is_liked = self.is_song_liked(id);
+
+        if is_liked {
+            self.dispatcher
+                .call_spotify_and_dispatch(move || async move {
+                    api.remove_saved_tracks(vec![song_id.clone()]).await?;
+                    Ok(BrowserAction::RemoveSavedTracks(vec![song_id]).into())
+                });
+        } else {
+            self.dispatcher
+                .call_spotify_and_dispatch(move || async move {
+                    api.save_tracks(vec![song_id]).await?;
+                    Ok(BrowserAction::SaveTracks(vec![song_desc]).into())
+                });
         }
     }
 }
@@ -214,6 +307,7 @@ mod tests {
     impl SpotifyApiClient for MockApi {
         stub_api_method!(get_artist(_id: &str) -> ArtistDescription);
         stub_api_method!(get_album(_id: &str) -> AlbumFullDescription);
+        stub_api_method!(get_track(_id: &str) -> SongDescription);
         stub_api_method!(get_album_tracks(_id: &str, _offset: usize, _limit: usize) -> SongBatch);
         stub_api_method!(get_playlist(_id: &str) -> PlaylistDescription);
         stub_api_method!(get_playlist_tracks(_id: &str, _offset: usize, _limit: usize) -> SongBatch);
@@ -231,6 +325,7 @@ mod tests {
         stub_api_method!(unfollow_playlist(_id: &str) -> ());
         stub_api_method!(update_playlist_details(_id: &str, _name: String) -> ());
         stub_api_method!(search(_query: &str, _offset: usize, _limit: usize) -> SearchResults);
+        stub_api_method!(search_scoped(_query: &str, _search_type: SearchType, _offset: usize, _limit: usize) -> SearchResults);
         stub_api_method!(get_artist_albums(_id: &str, _offset: usize, _limit: usize) -> Vec<AlbumDescription>);
         stub_api_method!(get_user(_id: &str) -> UserDescription);
         stub_api_method!(get_user_playlists(_id: &str, _offset: usize, _limit: usize) -> Vec<PlaylistDescription>);
@@ -266,9 +361,8 @@ mod tests {
     fn make_model_playing() -> (DetailsPageModel, MockDispatcher) {
         let dispatcher = MockDispatcher::default();
         let app_model = Rc::new(AppModel::new(AppState::new(), Arc::new(MockApi)));
-        app_model.update_state(
-            PlaybackAction::LoadSongs(vec![song("s1"), song("s2")]).into(),
-        );
+        #[allow(deprecated)]
+        app_model.update_state(PlaybackAction::LoadSongs(vec![song("s1"), song("s2")]).into());
         app_model.update_state(PlaybackAction::Load("s1".to_string()).into());
         let model = DetailsPageModel::new(
             "test-id".to_string(),
@@ -288,9 +382,10 @@ mod tests {
                 id: "".to_string(),
                 name: "".to_string(),
             },
-            duration: 1000,
+            duration_ms: 1000,
             art: None,
             track_number: None,
+            explicit: false,
         }
     }
 
@@ -298,7 +393,11 @@ mod tests {
         let mut list = SongListModel::new(50);
         let _ = list.add(SongBatch {
             songs,
-            batch: Batch { offset: 0, batch_size: 50, total: 50 },
+            batch: Batch {
+                offset: 0,
+                batch_size: 50,
+                total: 50,
+            },
         });
         list
     }
@@ -318,9 +417,9 @@ mod tests {
     }
 
     #[test]
-    fn test_is_playback_event_other() {
+    fn test_is_playback_event_track_changed() {
         let event = AppEvent::PlaybackEvent(PlaybackEvent::TrackChanged("x".to_string()));
-        assert_eq!(is_playback_event(&event), None);
+        assert_eq!(is_playback_event(&event), Some(true));
     }
 
     #[test]
@@ -355,7 +454,9 @@ mod tests {
         let (model, dispatcher) = make_model();
         model.deselect_song("song-1");
         let action = dispatcher.last_action().unwrap();
-        assert!(matches!(action, AppAction::SelectionAction(SelectionAction::Deselect(ids)) if ids == vec!["song-1".to_string()]));
+        assert!(
+            matches!(action, AppAction::SelectionAction(SelectionAction::Deselect(ids)) if ids == vec!["song-1".to_string()])
+        );
     }
 
     #[test]
@@ -372,7 +473,9 @@ mod tests {
         let list = make_song_list(vec![song("a"), song("b")]);
         model.select_song_from_list(&list, "b");
         let action = dispatcher.last_action().unwrap();
-        assert!(matches!(action, AppAction::SelectionAction(SelectionAction::Select(songs)) if songs.len() == 1 && songs[0].id == "b"));
+        assert!(
+            matches!(action, AppAction::SelectionAction(SelectionAction::Select(songs)) if songs.len() == 1 && songs[0].id == "b")
+        );
     }
 
     #[test]
@@ -389,7 +492,10 @@ mod tests {
         let result = model.enable_selection_with_context(SelectionContext::Default);
         if result {
             let action = dispatcher.last_action().unwrap();
-            assert!(matches!(action, AppAction::EnableSelection(SelectionContext::Default)));
+            assert!(matches!(
+                action,
+                AppAction::EnableSelection(SelectionContext::Default)
+            ));
         }
     }
 
@@ -418,7 +524,10 @@ mod tests {
         model.toggle_playback(true, &list, |_, _| panic!("should not start playback"));
 
         let action = dispatcher.last_action().unwrap();
-        assert!(matches!(action, AppAction::PlaybackAction(PlaybackAction::Pause)));
+        assert!(matches!(
+            action,
+            AppAction::PlaybackAction(PlaybackAction::Pause)
+        ));
     }
 
     #[test]
@@ -429,7 +538,10 @@ mod tests {
         model.toggle_playback(true, &list, |_, _| panic!("should not start playback"));
 
         let action = dispatcher.last_action().unwrap();
-        assert!(matches!(action, AppAction::PlaybackAction(PlaybackAction::Play)));
+        assert!(matches!(
+            action,
+            AppAction::PlaybackAction(PlaybackAction::Play)
+        ));
     }
 
     #[test]
@@ -444,8 +556,13 @@ mod tests {
         });
 
         let actions = dispatcher.dispatched();
-        assert!(actions.iter().any(|a| matches!(a, AppAction::PlaybackAction(PlaybackAction::ToggleShuffle))));
-        let (pos, id) = called.borrow().clone().expect("play_song_at should be called");
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, AppAction::PlaybackAction(PlaybackAction::ToggleShuffle))));
+        let (pos, id) = called
+            .borrow()
+            .clone()
+            .expect("play_song_at should be called");
         assert!(pos < 2);
         assert!(id == "a" || id == "b");
     }
@@ -453,7 +570,9 @@ mod tests {
     #[test]
     fn test_start_playback_disables_shuffle_when_not_wanted() {
         let (model, dispatcher) = make_model_playing();
-        model.app_model.update_state(PlaybackAction::ToggleShuffle.into());
+        model
+            .app_model
+            .update_state(PlaybackAction::ToggleShuffle.into());
         assert!(model.is_shuffled());
         dispatcher.clear();
 
@@ -461,7 +580,9 @@ mod tests {
         model.start_playback(false, &list, |_, _| {});
 
         let actions = dispatcher.dispatched();
-        assert!(actions.iter().any(|a| matches!(a, AppAction::PlaybackAction(PlaybackAction::ToggleShuffle))));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, AppAction::PlaybackAction(PlaybackAction::ToggleShuffle))));
     }
 
     #[test]

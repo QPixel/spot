@@ -5,6 +5,11 @@ use gio::prelude::*;
 use glib::subclass::prelude::*;
 use glib::Properties;
 
+use std::{
+    any::Any,
+    cell::{Cell, Ref, RefCell},
+};
+
 glib::wrapper! {
     pub struct CardModel(ObjectSubclass<imp::CardModel>);
 }
@@ -18,6 +23,7 @@ impl CardModel {
         release_date: Option<&str>,
         popularity: Option<u32>,
         insertion_position: Option<u32>,
+        category: Option<&str>,
     ) -> CardModel {
         let title = if title.is_empty() && !id.is_empty() {
             gettext("Untitled")
@@ -38,13 +44,30 @@ impl CardModel {
         if let Some(pos) = insertion_position {
             builder = builder.property("insertion-position", pos);
         }
+        if let Some(cat) = category {
+            builder = builder.property("category", cat);
+        }
         builder.build()
+    }
+
+    pub fn with_data<T: Any>(self, data: T) -> Self {
+        self.imp().data.borrow_mut().replace(Box::new(data));
+        self
+    }
+
+    pub fn data(&self) -> Option<Ref<Box<dyn Any>>> {
+        // I couldn't think of a batter way to transpose Ref<Option> into Option<Ref>
+        let data = self.imp().data.borrow();
+        if data.is_none() {
+            return None;
+        }
+        Some(Ref::map(data, |data| data.as_ref().unwrap()))
     }
 }
 
 mod imp {
+
     use super::*;
-    use std::cell::{Cell, RefCell};
 
     #[derive(Default, Properties)]
     #[properties(wrapper_type = super::CardModel)]
@@ -63,6 +86,10 @@ mod imp {
         popularity: Cell<u32>,
         #[property(get, set, name = "insertion-position")]
         insertion_position: Cell<u32>,
+        #[property(get, set)]
+        category: RefCell<String>,
+
+        pub data: RefCell<Option<Box<dyn Any + 'static>>>,
     }
 
     #[glib::object_subclass]
@@ -80,13 +107,23 @@ mod imp {
 mod tests {
     use super::*;
     use crate::app::models::{
-        AlbumDescription, ArtistRef, ArtistSummary, ImageSet, PlaylistDescription, SongBatch, UserRef,
+        AlbumDescription, ArtistRef, ArtistSummary, ImageSet, PlaylistDescription, SongBatch,
+        UserRef,
     };
 
     #[test]
     fn test_new_with_all_fields() {
         let img = "https://example.com/img.jpg".to_string();
-        let card = CardModel::new("abc123", Some(&img), "My Title", "My Subtitle", None, None, None);
+        let card = CardModel::new(
+            "abc123",
+            Some(&img),
+            "My Title",
+            "My Subtitle",
+            None,
+            None,
+            None,
+            None,
+        );
         assert_eq!(card.id(), "abc123");
         assert_eq!(card.image(), Some(img));
         assert_eq!(card.title(), "My Title");
@@ -95,13 +132,13 @@ mod tests {
 
     #[test]
     fn test_new_without_image() {
-        let card = CardModel::new("id1", None, "Title", "Sub", None, None, None);
+        let card = CardModel::new("id1", None, "Title", "Sub", None, None, None, None);
         assert_eq!(card.image(), None);
     }
 
     #[test]
     fn test_set_properties() {
-        let card = CardModel::new("id", None, "old", "old", None, None, None);
+        let card = CardModel::new("id", None, "old", "old", None, None, None, None);
         card.set_title("new title".to_string());
         card.set_subtitle("new sub".to_string());
         assert_eq!(card.title(), "new title");
@@ -136,14 +173,21 @@ mod tests {
             id: "album1".to_string(),
             title: "Album Title".to_string(),
             artists: vec![
-                ArtistRef { id: "a1".to_string(), name: "Artist A".to_string() },
-                ArtistRef { id: "a2".to_string(), name: "Artist B".to_string() },
+                ArtistRef {
+                    id: "a1".to_string(),
+                    name: "Artist A".to_string(),
+                },
+                ArtistRef {
+                    id: "a2".to_string(),
+                    name: "Artist B".to_string(),
+                },
             ],
             release_date: Some("2023-05-01".to_string()),
             art: ImageSet::from_images(vec![(Some(300), "https://img.com/cover.jpg".to_string())]),
             songs: SongBatch::empty(),
             is_liked: false,
             popularity: 72,
+            album_type: Some("album".to_string()),
         };
         let card = CardModel::from(&album);
         assert_eq!(card.id(), "album1");
@@ -159,7 +203,10 @@ mod tests {
             title: "My Playlist".to_string(),
             art: None,
             songs: SongBatch::empty(),
-            owner: UserRef { id: "user1".to_string(), display_name: "John".to_string() },
+            owner: UserRef {
+                id: "user1".to_string(),
+                display_name: "John".to_string(),
+            },
         };
         let card = CardModel::from(&playlist);
         assert_eq!(card.id(), "pl1");
@@ -173,7 +220,10 @@ mod tests {
         let artist = ArtistSummary {
             id: "art1".to_string(),
             name: "Cool Artist".to_string(),
-            photo: ImageSet::from_images(vec![(Some(300), "https://img.com/photo.jpg".to_string())]),
+            photo: ImageSet::from_images(vec![(
+                Some(300),
+                "https://img.com/photo.jpg".to_string(),
+            )]),
             popularity: 85,
         };
         let card = CardModel::from(&artist);

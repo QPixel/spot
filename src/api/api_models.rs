@@ -47,35 +47,15 @@ pub struct Name<'a> {
     pub name: &'a str,
 }
 
-pub enum SearchType {
-    Artist,
-    Album,
-}
-
-impl SearchType {
-    fn into_string(self) -> &'static str {
-        match self {
-            Self::Artist => "artist",
-            Self::Album => "album",
-        }
-    }
-}
-
 pub struct SearchQuery {
     pub query: String,
-    pub types: Vec<SearchType>,
+    pub types: String,
     pub limit: usize,
     pub offset: usize,
 }
 
 impl SearchQuery {
     pub fn into_query_string(self) -> String {
-        let mut types = self
-            .types
-            .into_iter()
-            .fold(String::new(), |acc, t| acc + t.into_string() + ",");
-        types.pop();
-
         let re = Regex::new(r"(\W|\s)+").unwrap();
         let query = re.replace_all(&self.query[..], " ");
 
@@ -86,6 +66,7 @@ impl SearchQuery {
             .append_pair("market", "from_token")
             .finish();
 
+        let types = &self.types;
         format!("type={types}&{serialized}")
     }
 }
@@ -252,6 +233,7 @@ pub struct Album {
     pub images: Vec<Image>,
     #[serde(default)]
     pub popularity: u32,
+    pub album_type: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -314,7 +296,15 @@ impl WithImages for Artist {
 pub struct User {
     pub id: String,
     pub display_name: String,
+    pub product: Option<String>,
     pub images: Option<Vec<Image>>,
+    pub explicit_content: Option<ExplicitContentSettings>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ExplicitContentSettings {
+    pub filter_enabled: bool,
+    pub filter_locked: bool,
 }
 
 impl WithImages for User {
@@ -408,6 +398,8 @@ pub struct AlbumTrackItem {
     pub name: String,
     pub duration_ms: i64,
     pub artists: Vec<Artist>,
+    #[serde(default)]
+    pub explicit: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -438,17 +430,31 @@ impl FailibleTrackItem {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RawSearchResults {
+    #[serde(default)]
     pub albums: Option<Page<Album>>,
+    #[serde(default)]
     pub artists: Option<Page<Artist>>,
+    #[serde(default)]
+    pub tracks: Option<Page<TrackItem>>,
+    #[serde(default)]
+    pub playlists: Option<Page<Playlist>>,
 }
 
 impl From<Artist> for ArtistSummary {
     fn from(artist: Artist) -> Self {
-        let photo = ImageSet::from_images(
-            artist.images().iter().map(|i| (i.width_px(), i.url.clone())),
-        );
-        let Artist { id, name, popularity, .. } = artist;
-        Self { id, name, photo, popularity }
+        let photo = ImageSet::from_images(artist.images().iter().map(|i| (i.width, i.url.clone())));
+        let Artist {
+            id,
+            name,
+            popularity,
+            ..
+        } = artist;
+        Self {
+            id,
+            name,
+            photo,
+            popularity,
+        }
     }
 }
 
@@ -536,6 +542,7 @@ where
                     name,
                     duration_ms,
                     track_number,
+                    explicit,
                 } = track;
                 let artists = artists
                     .into_iter()
@@ -545,9 +552,8 @@ where
                     })
                     .collect::<Vec<ArtistRef>>();
 
-                let art = ImageSet::from_images(
-                    album.images().iter().map(|i| (i.width_px(), i.url.clone())),
-                );
+                let art =
+                    ImageSet::from_images(album.images().iter().map(|i| (i.width, i.url.clone())));
                 let Album {
                     id: album_id,
                     name: album_name,
@@ -566,8 +572,9 @@ where
                     title: name,
                     artists,
                     album: album_ref,
-                    duration: duration_ms as u32,
+                    duration_ms: duration_ms as u32,
                     art,
+                    explicit,
                 })
             })
             .collect();
@@ -581,6 +588,20 @@ impl TryFrom<Album> for SongBatch {
     fn try_from(mut album: Album) -> Result<Self, Self::Error> {
         let tracks = album.tracks.take().ok_or(())?;
         Ok((tracks, &album).into())
+    }
+}
+
+impl From<TrackItem> for SongDescription {
+    /// Convert a single fetched track (e.g. from `GET /v1/tracks/{id}`) into the
+    /// domain `SongDescription`. The track carries its own album, so the
+    /// resulting song always has a valid `album` reference.
+    fn from(track: TrackItem) -> Self {
+        let batch: SongBatch = Page::new(vec![track]).into();
+        batch
+            .songs
+            .into_iter()
+            .next()
+            .expect("a fetched track always yields exactly one song")
     }
 }
 
@@ -609,9 +630,7 @@ impl From<Album> for AlbumDescription {
             .clone()
             .try_into()
             .unwrap_or_else(|_| SongBatch::empty());
-        let art = ImageSet::from_images(
-            album.images().iter().map(|i| (i.width_px(), i.url.clone())),
-        );
+        let art = ImageSet::from_images(album.images().iter().map(|i| (i.width, i.url.clone())));
 
         Self {
             id: album.id,
@@ -622,6 +641,7 @@ impl From<Album> for AlbumDescription {
             songs,
             is_liked: false,
             popularity: album.popularity,
+            album_type: album.album_type,
         }
     }
 }
@@ -650,9 +670,7 @@ impl From<AlbumInfo> for AlbumReleaseDetails {
 
 impl From<Playlist> for PlaylistDescription {
     fn from(playlist: Playlist) -> Self {
-        let art = ImageSet::from_images(
-            playlist.images().iter().map(|i| (i.width_px(), i.url.clone())),
-        );
+        let art = ImageSet::from_images(playlist.images().iter().map(|i| (i.width, i.url.clone())));
         let Playlist {
             id,
             name,
@@ -725,5 +743,71 @@ mod tests {
         let deserialized: PlaylistTrack = serde_json::from_str(track).unwrap();
         let track_item: Option<TrackItem> = deserialized.try_into().ok();
         assert!(track_item.is_some());
+    }
+
+    #[test]
+    fn test_search_query_encoding() {
+        let query = SearchQuery {
+            query: "кириллица".to_string(),
+            types: "album,track,artist".to_string(),
+            limit: 5,
+            offset: 0,
+        };
+
+        assert_eq!(query.into_query_string(), "type=album,track,artist&q=%D0%BA%D0%B8%D1%80%D0%B8%D0%BB%D0%BB%D0%B8%D1%86%D0%B0&offset=0&limit=5&market=from_token");
+    }
+
+    #[test]
+    fn test_search_query_spaces_and_stuff() {
+        let query = SearchQuery {
+            query: "test??? wow".to_string(),
+            types: "album,track,artist".to_string(),
+            limit: 5,
+            offset: 0,
+        };
+
+        assert_eq!(
+            query.into_query_string(),
+            "type=album,track,artist&q=test+wow&offset=0&limit=5&market=from_token"
+        );
+    }
+
+    #[test]
+    fn test_search_query_scoped_type() {
+        let query = SearchQuery {
+            query: "daft punk".to_string(),
+            types: "playlist".to_string(),
+            limit: 20,
+            offset: 40,
+        };
+
+        assert_eq!(
+            query.into_query_string(),
+            "type=playlist&q=daft+punk&offset=40&limit=20&market=from_token"
+        );
+    }
+
+    #[test]
+    fn test_track_item_into_song_description() {
+        // Shape returned by GET /v1/tracks/{id}: a track with a nested album.
+        let track = r#"{
+            "id": "track123",
+            "uri": "spotify:track:track123",
+            "name": "Some Song",
+            "duration_ms": 210000,
+            "track_number": 3,
+            "artists": [{"id": "artist1", "name": "Artist"}],
+            "album": {
+                "id": "album456",
+                "name": "Some Album",
+                "artists": [{"id": "artist1", "name": "Artist"}],
+                "images": [{"height": 64, "url": "http://img", "width": 64}]
+            }
+        }"#;
+        let deserialized: TrackItem = serde_json::from_str(track).unwrap();
+        let song: SongDescription = deserialized.into();
+        assert_eq!(song.id, "track123");
+        assert_eq!(song.album.id, "album456");
+        assert_eq!(song.title, "Some Song");
     }
 }

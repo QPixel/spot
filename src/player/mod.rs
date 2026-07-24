@@ -8,14 +8,10 @@ use url::Url;
 
 use crate::app::state::{LoginAction, PlaybackAction};
 use crate::app::AppAction;
+use crate::auth::TokenStore;
 #[allow(clippy::module_inception)]
 mod player;
 pub use player::*;
-
-mod oauth2;
-
-mod token_store;
-pub use token_store::*;
 
 #[derive(Debug, Clone)]
 pub enum Command {
@@ -24,7 +20,10 @@ pub enum Command {
     CompleteLogin,
     RefreshToken,
     Logout,
-    PlayerLoad { track: SpotifyUri, resume: bool },
+    PlayerLoad {
+        track: SpotifyUri,
+        resume: bool,
+    },
     PlayerResume,
     PlayerPause,
     PlayerStop,
@@ -32,6 +31,27 @@ pub enum Command {
     PlayerSetVolume(f64),
     PlayerPreload(SpotifyUri),
     ReloadSettings,
+    SetEqualizer {
+        bands: [f64; 10],
+    },
+    SetMono {
+        enabled: bool,
+    },
+    SetPan {
+        pan: f64,
+    },
+    SetPitch {
+        cents: f64,
+    },
+    // Re-query the account's explicit content filter (e.g. after a track was
+    // rejected with ExplicitContentFiltered) and sync Riff's filter state.
+    RecheckExplicitFilter,
+    // Carries the result of an asynchronous explicit-filter re-check back into
+    // the command loop so the player can update its cached state.
+    ExplicitFilterRechecked {
+        filter_enabled: bool,
+        filter_locked: bool,
+    },
 }
 
 #[derive(Clone)]
@@ -60,8 +80,17 @@ impl AppPlayerDelegate {
         self.send(LoginAction::TokenRefreshed.into())
     }
 
+    fn set_explicit_filter_locked(&self, locked: bool) {
+        self.send(PlaybackAction::SetExplicitFilterLocked(locked).into())
+    }
+
+    fn set_skip_explicit(&self, skip: bool) {
+        self.send(PlaybackAction::SetSkipExplicit(skip).into())
+    }
+
     fn report_error(&self, error: SpotifyError) {
         self.send(match error {
+            SpotifyError::NotPremium => LoginAction::SetNotPremium.into(),
             SpotifyError::LoginFailed => LoginAction::SetLoginFailure.into(),
             SpotifyError::LoggedOut => LoginAction::Logout.into(),
             _ => AppAction::ShowNotification(format!("{error}")),
@@ -73,7 +102,7 @@ impl AppPlayerDelegate {
     }
 
     fn preload_next_track(&self) {
-        self.send(PlaybackAction::Preload.into())
+        self.send(PlaybackAction::PreloadNext.into())
     }
 
     fn login_challenge_started(&self, url: Url) {

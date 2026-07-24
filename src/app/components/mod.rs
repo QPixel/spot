@@ -25,9 +25,15 @@ pub use shell::*;
 mod player_notifier;
 pub use player_notifier::PlayerNotifier;
 
+mod constants;
+pub use constants::*;
+
 pub mod utils;
 
 pub mod labels;
+
+pub mod clipboard_link;
+pub use clipboard_link::{copy_link_to_clipboard, is_app_copied_link};
 
 // without this the builder doesn't seen to know about the custom widgets
 pub fn expose_custom_widgets() {

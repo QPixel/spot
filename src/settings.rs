@@ -5,16 +5,34 @@ use crate::{
         state::{PlaybackAction, PlaybackEvent},
         AppAction, AppEvent, BrowserEvent,
     },
-    player::{AudioBackend, SpotifyPlayerSettings},
+    player::{AudioBackend, SpotifyPlayerSettings, VolumeCurveType},
 };
 use gio::prelude::SettingsExt;
 use libadwaita::ColorScheme;
 #[cfg(target_os = "macos")]
 use librespot_playback::config::Bitrate;
 #[cfg(not(target_os = "macos"))]
-use librespot::playback::config::Bitrate;
+use librespot::playback::config::{AudioFormat, Bitrate, NormalisationMethod, NormalisationType};
 
 const SETTINGS: &str = "dev.diegovsky.Riff";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CloseWindowBehavior {
+    #[default]
+    Ask,
+    MinimizeToBackground,
+    StopAndQuit,
+}
+
+impl CloseWindowBehavior {
+    pub fn from_gsettings_enum(value: i32) -> Self {
+        match value {
+            1 => Self::MinimizeToBackground,
+            2 => Self::StopAndQuit,
+            _ => Self::Ask,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct WindowGeometry {
@@ -79,21 +97,106 @@ impl SpotifyPlayerSettings {
 
         let volume = settings.double("volume");
         let shuffle = settings.boolean("shuffle");
+        let skip_explicit = settings.boolean("skip-explicit");
         let repeat = match settings.string("repeat").as_str() {
             "song" => RepeatMode::Song,
             "playlist" => RepeatMode::Playlist,
             "none" | _ => RepeatMode::None,
         };
 
+        // Volume curve
+        let volume_curve = match settings.enum_("volume-curve") {
+            0 => VolumeCurveType::Log,
+            1 => VolumeCurveType::Linear,
+            2 => VolumeCurveType::Cubic,
+            _ => VolumeCurveType::Log,
+        };
+
+        // Normalization
+        let normalisation = settings.boolean("normalisation");
+        let normalisation_type = match settings.enum_("normalisation-type") {
+            0 => NormalisationType::Auto,
+            1 => NormalisationType::Track,
+            2 => NormalisationType::Album,
+            _ => NormalisationType::Auto,
+        };
+        let normalisation_method = match settings.enum_("normalisation-method") {
+            0 => NormalisationMethod::Dynamic,
+            1 => NormalisationMethod::Basic,
+            _ => NormalisationMethod::Dynamic,
+        };
+        let normalisation_pregain_db = settings.double("normalisation-pregain-db");
+        let normalisation_threshold_dbfs = settings.double("normalisation-threshold-dbfs");
+        let normalisation_attack_ms = settings.double("normalisation-attack-ms");
+        let normalisation_release_ms = settings.double("normalisation-release-ms");
+        let normalisation_knee_db = settings.double("normalisation-knee-db");
+
+        // Audio format
+        let audio_format = match settings.enum_("audio-format") {
+            0 => AudioFormat::S16,
+            1 => AudioFormat::S24,
+            2 => AudioFormat::S24_3,
+            3 => AudioFormat::S32,
+            4 => AudioFormat::F32,
+            5 => AudioFormat::F64,
+            _ => AudioFormat::S16,
+        };
+
+        // Equalizer (active whenever any band is non-zero)
+        let eq_bands = [
+            settings.double("eq-band-0"),
+            settings.double("eq-band-1"),
+            settings.double("eq-band-2"),
+            settings.double("eq-band-3"),
+            settings.double("eq-band-4"),
+            settings.double("eq-band-5"),
+            settings.double("eq-band-6"),
+            settings.double("eq-band-7"),
+            settings.double("eq-band-8"),
+            settings.double("eq-band-9"),
+        ];
+
+        // Mono audio
+        let mono_audio = settings.boolean("mono-audio");
+
+        // Stereo pan / balance (always enabled; centered has no effect)
+        let pan = settings.double("pan");
+
+        // Pitch shift in cents (0.0 = no shift)
+        let pitch_cents = settings.double("pitch-cents");
+
         Some(Self {
             volume,
             repeat,
             shuffle,
 
+            skip_explicit,
+
             bitrate,
             backend,
             gapless,
             ap_port,
+
+            volume_curve,
+
+            normalisation,
+            normalisation_type,
+            normalisation_method,
+            normalisation_pregain_db,
+            normalisation_threshold_dbfs,
+            normalisation_attack_ms,
+            normalisation_release_ms,
+            normalisation_knee_db,
+
+            audio_format,
+
+            mono_audio,
+
+            pan,
+
+            pitch_cents,
+
+            eq_bands,
         })
     }
     pub fn actions(&self) -> Vec<AppAction> {
@@ -102,6 +205,7 @@ impl SpotifyPlayerSettings {
             SetVolume(self.volume).into(),
             SetShuffled(self.shuffle).into(),
             SetRepeatMode(self.repeat).into(),
+            SetSkipExplicit(self.skip_explicit).into(),
         ]
     }
 }
@@ -189,19 +293,25 @@ impl StateTracker {
     }
 
     pub fn save_card_layout(&self, layout: CardLayout) {
-        let _ = self.settings.set_string("card-layout", match layout {
-            CardLayout::Vertical => "vertical",
-            CardLayout::ImageOnly => "image-only",
-            CardLayout::Horizontal => "horizontal",
-        });
+        let _ = self.settings.set_string(
+            "card-layout",
+            match layout {
+                CardLayout::Vertical => "vertical",
+                CardLayout::ImageOnly => "image-only",
+                CardLayout::Horizontal => "horizontal",
+            },
+        );
     }
 
     pub fn save_card_size(&self, size: CardSize) {
-        let _ = self.settings.set_string("card-size", match size {
-            CardSize::Small => "small",
-            CardSize::Medium => "medium",
-            CardSize::Large => "large",
-        });
+        let _ = self.settings.set_string(
+            "card-size",
+            match size {
+                CardSize::Small => "small",
+                CardSize::Medium => "medium",
+                CardSize::Large => "large",
+            },
+        );
     }
 
     pub fn load_card_layout(&self) -> CardLayout {
@@ -222,14 +332,22 @@ impl StateTracker {
 
     pub fn save_sort_order(&self, page: &str, order: SortOrder) {
         let key = format!("sort-{page}");
-        if self.settings.settings_schema().map_or(false, |s| s.has_key(&key)) {
+        if self
+            .settings
+            .settings_schema()
+            .map_or(false, |s| s.has_key(&key))
+        {
             let _ = self.settings.set_string(&key, order.to_str());
         }
     }
 
     pub fn load_sort_order(&self, page: &str) -> SortOrder {
         let key = format!("sort-{page}");
-        if self.settings.settings_schema().map_or(false, |s| s.has_key(&key)) {
+        if self
+            .settings
+            .settings_schema()
+            .map_or(false, |s| s.has_key(&key))
+        {
             SortOrder::parse_key(self.settings.string(&key).as_str())
         } else {
             SortOrder::RecentlyAdded

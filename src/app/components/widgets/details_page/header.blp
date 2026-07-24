@@ -100,6 +100,16 @@ template $DetailsHeaderWidget : Box {
               "body",
             ]
           }
+
+          Box subtitle_links_box {
+            orientation: horizontal;
+            halign: start;
+            visible: false;
+
+            styles [
+              "body",
+            ]
+          }
         }
 
         [end]
@@ -138,11 +148,25 @@ template $DetailsHeaderWidget : Box {
             icon-name: "non-starred-symbolic";
             halign: center;
             valign: center;
+            visible: false;
             tooltip-text: _("Add to Library");
 
             styles [
               "circular",
               "like__button",
+            ]
+          }
+
+          Button share_button {
+            icon-name: "folder-publicshare-symbolic";
+            halign: center;
+            valign: center;
+            visible: false;
+            tooltip-text: _("Copy link");
+
+            styles [
+              "circular",
+              "share__button",
             ]
           }
 

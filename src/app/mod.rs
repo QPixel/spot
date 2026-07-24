@@ -1,5 +1,6 @@
+use crate::auth::TokenStore;
 use crate::settings::{RiffSettings, StateTracker};
-use crate::{api::CachedSpotifyClient, feature_flags, player::TokenStore};
+use crate::{api::CachedSpotifyClient, feature_flags};
 use futures::channel::mpsc::UnboundedSender;
 use gtk::prelude::*;
 use std::rc::Rc;
@@ -17,7 +18,9 @@ mod list_store;
 pub use list_store::*;
 
 pub mod state;
-pub use state::{AppAction, AppEvent, AppModel, AppState, BrowserAction, BrowserEvent, PaginationTarget};
+pub use state::{
+    AppAction, AppEvent, AppModel, AppState, BrowserAction, BrowserEvent, PaginationTarget,
+};
 
 mod batch_loader;
 pub use batch_loader::*;
@@ -65,6 +68,7 @@ impl App {
             ),
             Box::new(StateTracker::new_from_gsettings()),
             App::make_dbus(Rc::clone(&model), sender.clone()),
+            App::make_inhibitor(&builder, Rc::clone(&model)),
         ];
 
         Self {
@@ -114,6 +118,7 @@ impl App {
                 worker.clone(),
             ),
             App::make_search_button(builder, dispatcher.box_clone()),
+            App::make_clipboard_import(builder, Rc::clone(model), dispatcher.box_clone()),
             App::make_user_menu(builder, Rc::clone(model), dispatcher),
             App::make_notification(builder),
         ];
@@ -173,6 +178,11 @@ impl App {
     ) -> Box<impl EventListener> {
         let window: libadwaita::ApplicationWindow = builder.object("window").unwrap();
         Box::new(MainWindow::new(settings.window.clone(), app_model, window))
+    }
+
+    fn make_inhibitor(builder: &gtk::Builder, app_model: Rc<AppModel>) -> Box<impl EventListener> {
+        let window: libadwaita::ApplicationWindow = builder.object("window").unwrap();
+        Box::new(crate::inhibitor::SuspendInhibitor::new(window, app_model))
     }
 
     fn make_navigation(
@@ -258,6 +268,15 @@ impl App {
         Box::new(Notification::new(toast_overlay))
     }
 
+    fn make_clipboard_import(
+        builder: &gtk::Builder,
+        app_model: Rc<AppModel>,
+        dispatcher: Box<dyn ActionDispatcher>,
+    ) -> Box<ClipboardImport> {
+        let window: libadwaita::ApplicationWindow = builder.object("window").unwrap();
+        Box::new(ClipboardImport::new(window, dispatcher, app_model))
+    }
+
     // Main handler called in a loop
     fn handle(&mut self, action: AppAction) {
         let starting = matches!(&action, &AppAction::Start);
@@ -274,6 +293,7 @@ impl App {
         // ...and notify every component that we know.
         // They'll be responsible for passing down these events, if they feel like it.
         for event in events.iter() {
+            info!("Event: {event:?}");
             for component in self.components.iter_mut() {
                 component.on_event(event);
             }
@@ -288,9 +308,7 @@ impl App {
         let app = &mut self;
         dispatch_loop
             .attach(move |action| {
-                if let AppAction::PlaybackAction(ref action) = action {
-                    info!("{action:#?}")
-                };
+                info!("Action: {action:?}");
                 app.handle(action);
             })
             .await;
