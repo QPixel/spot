@@ -12,8 +12,6 @@ use libadwaita::prelude::*;
 
 use std::env;
 
-use std::env;
-
 use super::EqualizerWidget;
 use super::PanWidget;
 use super::PitchWidget;
@@ -147,13 +145,6 @@ impl SettingsDialog {
         dialog.apply_feature_flag_visibility();
         dialog.connect_theme_select();
         dialog
-    }
-
-    fn apply_feature_flag_visibility(&self) {
-        let widget = self.imp();
-        widget
-            .normalisation_group
-            .set_visible(feature_flags::is_enabled(FeatureFlag::Normalisation));
     }
 
     fn apply_feature_flag_visibility(&self) {
