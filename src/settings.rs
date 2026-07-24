@@ -5,7 +5,7 @@ use crate::{
         state::{PlaybackAction, PlaybackEvent},
         AppAction, AppEvent, BrowserEvent,
     },
-    player::{AudioBackend, SpotifyPlayerSettings, VolumeCurveType},
+    player::{AudioBackend, SpotifyPlayerSettings, VolumeCurveType, DEFAULT_BACKEND},
 };
 use gio::prelude::SettingsExt;
 use libadwaita::ColorScheme;
@@ -14,12 +14,6 @@ use crate::spotify::playback::config::{
 };
 
 const SETTINGS: &str = "dev.diegovsky.Riff";
-
-#[cfg(target_os = "macos")]
-const DEFAULT_BACKEND: AudioBackend = AudioBackend::Rodio;
-
-#[cfg(target_os = "linux")]
-const DEFAULT_BACKEND: AudioBackend = AudioBackend::PulseAudio;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CloseWindowBehavior {
@@ -87,7 +81,7 @@ impl SpotifyPlayerSettings {
             3 => Some(AudioBackend::GStreamer(
                 "audioconvert dithering=none ! audioresample ! pipewiresink".to_string(), // This should be configurable eventually
             )),
-            _ => None,
+            _ => Some(DEFAULT_BACKEND),
         }?;
         let gapless = settings.boolean("gapless-playback");
 

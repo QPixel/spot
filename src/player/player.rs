@@ -32,6 +32,12 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
+#[cfg(target_os = "macos")]
+pub const DEFAULT_BACKEND: AudioBackend = AudioBackend::Rodio;
+
+#[cfg(target_os = "linux")]
+pub const DEFAULT_BACKEND: AudioBackend = AudioBackend::PulseAudio;
+
 #[derive(Debug)]
 pub enum SpotifyError {
     LoginFailed,
@@ -134,7 +140,7 @@ impl Default for SpotifyPlayerSettings {
 
             bitrate: Bitrate::Bitrate160,
             gapless: true,
-            backend: AudioBackend::PulseAudio,
+            backend: DEFAULT_BACKEND,
             ap_port: None,
 
             volume_curve: VolumeCurveType::Log,
@@ -675,22 +681,32 @@ impl SpotifyPlayer {
         Player::new(player_config, session, soft_volume, move || {
             let sink: Box<dyn Sink> = match backend {
                 AudioBackend::GStreamer(pipeline) => {
-                    let backend = audio_backend::find(Some("gstreamer".to_string())).unwrap();
+                    let backend = audio_backend::find(Some("gstreamer".to_string())).unwrap_or_else(|| {
+                        error!("GStreamer backend not found");
+                        // return default backend, hard coded
+                        audio_backend::find(Some("rodio".to_string())).unwrap()
+                    });
                     backend(Some(pipeline), audio_format)
                 }
                 AudioBackend::PulseAudio => {
-                    info!("using pulseaudio");
-                    env::set_var("PULSE_PROP_application.name", "Riff");
-                    let backend = audio_backend::find(Some("pulseaudio".to_string())).unwrap();
+                    let backend = audio_backend::find(Some("pulseaudio".to_string())).unwrap_or_else(|| {
+                        error!("PulseAudio backend not found");
+                        // use default backend
+                        audio_backend::find(Some("rodio".to_string())).unwrap()
+                    });
                     backend(None, audio_format)
                 }
                 AudioBackend::Alsa(device) => {
                     info!("using alsa ({})", &device);
-                    let backend = audio_backend::find(Some("alsa".to_string())).unwrap();
+                    let backend = audio_backend::find(Some("alsa".to_string())).unwrap_or_else(|| {
+                        error!("Alsa backend not found");
+                        // use default backend
+                        audio_backend::find(Some("rodio".to_string())).unwrap()
+                    });
                     backend(Some(device), audio_format)
                 },
-                AudioBackend::Rodio => {
-                    info!("using rodio");
+                // default backend
+                _ => {
                     let backend = audio_backend::find(Some("rodio".to_string())).unwrap();
                     backend(None, audio_format)
                 }
