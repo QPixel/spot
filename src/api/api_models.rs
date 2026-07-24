@@ -442,7 +442,7 @@ pub struct RawSearchResults {
 
 impl From<Artist> for ArtistSummary {
     fn from(artist: Artist) -> Self {
-        let photo = ImageSet::from_images(artist.images().iter().map(|i| (i.width, i.url.clone())));
+        let photo = ImageSet::from_images(artist.images().iter().map(|i| (i.width_px(), i.url.clone())));
         let Artist {
             id,
             name,
@@ -553,7 +553,7 @@ where
                     .collect::<Vec<ArtistRef>>();
 
                 let art =
-                    ImageSet::from_images(album.images().iter().map(|i| (i.width, i.url.clone())));
+                    ImageSet::from_images(album.images().iter().map(|i| (i.width_px(), i.url.clone())));
                 let Album {
                     id: album_id,
                     name: album_name,
@@ -630,7 +630,7 @@ impl From<Album> for AlbumDescription {
             .clone()
             .try_into()
             .unwrap_or_else(|_| SongBatch::empty());
-        let art = ImageSet::from_images(album.images().iter().map(|i| (i.width, i.url.clone())));
+        let art = ImageSet::from_images(album.images().iter().map(|i| (i.width_px(), i.url.clone())));
 
         Self {
             id: album.id,
@@ -670,7 +670,7 @@ impl From<AlbumInfo> for AlbumReleaseDetails {
 
 impl From<Playlist> for PlaylistDescription {
     fn from(playlist: Playlist) -> Self {
-        let art = ImageSet::from_images(playlist.images().iter().map(|i| (i.width, i.url.clone())));
+        let art = ImageSet::from_images(playlist.images().iter().map(|i| (i.width_px(), i.url.clone())));
         let Playlist {
             id,
             name,

@@ -3,14 +3,8 @@ use std::rc::Rc;
 
 use futures::channel::mpsc::UnboundedSender;
 use gio::prelude::*;
-#[cfg(target_os = "macos")]
-use librespot_core::spotify_id::SpotifyId;
-#[cfg(target_os = "macos")]
-use librespot_core::SpotifyUri;
-#[cfg(not(target_os = "macos"))]
-use librespot::core::spotify_id::SpotifyId;
-#[cfg(not(target_os = "macos"))]
-use librespot::core::SpotifyUri;
+use crate::spotify::core::spotify_id::SpotifyId;
+use crate::spotify::core::SpotifyUri;
 
 use crate::app::components::EventListener;
 use crate::app::state::{

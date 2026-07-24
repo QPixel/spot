@@ -27,6 +27,7 @@ pub mod feature_flags;
 mod inhibitor;
 mod player;
 mod settings;
+mod spotify;
 
 use crate::app::components::expose_custom_widgets;
 use crate::app::dispatch::{spawn_task_handler, DispatchLoop};

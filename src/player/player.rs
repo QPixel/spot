@@ -1,48 +1,19 @@
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
 
-#[cfg(target_os = "macos")]
-use librespot_core::authentication::Credentials;
-#[cfg(target_os = "macos")]
-use librespot_core::cache::Cache;
-#[cfg(target_os = "macos")]
-use librespot_core::config::SessionConfig;
-#[cfg(target_os = "macos")]
-use librespot_core::session::Session;
-#[cfg(not(target_os = "macos"))]
-use librespot::core::authentication::Credentials;
-#[cfg(not(target_os = "macos"))]
-use librespot::core::cache::Cache;
-#[cfg(not(target_os = "macos"))]
-use librespot::core::config::SessionConfig;
-#[cfg(not(target_os = "macos"))]
-use librespot::core::session::Session;
-
-#[cfg(target_os = "macos")]
-use librespot_playback::mixer::softmixer::SoftMixer;
-#[cfg(target_os = "macos")]
-use librespot_playback::mixer::{Mixer, MixerConfig};
-#[cfg(not(target_os = "macos"))]
-use librespot::playback::mixer::softmixer::SoftMixer;
-#[cfg(not(target_os = "macos"))]
-use librespot::playback::mixer::{Mixer, MixerConfig};
-
-#[cfg(target_os = "macos")]
-use librespot_playback::audio_backend;
-#[cfg(target_os = "macos")]
-use librespot_playback::config::{AudioFormat, Bitrate, PlayerConfig, VolumeCtrl};
-#[cfg(target_os = "macos")]
-use librespot_playback::player::{Player, PlayerEvent, PlayerEventChannel};
-#[cfg(not(target_os = "macos"))]
-use librespot::playback::audio_backend;
-#[cfg(not(target_os = "macos"))]
-use librespot::playback::config::{AudioFormat, Bitrate, PlayerConfig, VolumeCtrl};
-#[cfg(not(target_os = "macos"))]
-use librespot::playback::audio_backend::Sink;
-use librespot::playback::config::{
+use crate::spotify::core::authentication::Credentials;
+use crate::spotify::core::cache::Cache;
+use crate::spotify::core::config::SessionConfig;
+use crate::spotify::core::session::Session;
+use crate::spotify::playback::audio_backend;
+use crate::spotify::playback::audio_backend::Sink;
+use crate::spotify::playback::config::{
     AudioFormat, Bitrate, NormalisationMethod, NormalisationType, PlayerConfig, VolumeCtrl,
 };
-use librespot::playback::player::{Player, PlayerEvent, PlayerEventChannel};
+use crate::spotify::playback::mixer::softmixer::SoftMixer;
+use crate::spotify::playback::mixer::{Mixer, MixerConfig};
+use crate::spotify::playback::player::{Player, PlayerEvent, PlayerEventChannel};
+
 
 use crate::app::models::RepeatMode;
 use crate::audio_engine::{
@@ -637,10 +608,10 @@ impl SpotifyPlayer {
         let audio_format = self.settings.audio_format;
 
         // Convert attack/release from milliseconds to coefficients
-        let normalisation_attack_cf = librespot::playback::player::duration_to_coefficient(
+        let normalisation_attack_cf = crate::spotify::playback::player::duration_to_coefficient(
             std::time::Duration::from_secs_f64(self.settings.normalisation_attack_ms / 1000.0),
         );
-        let normalisation_release_cf = librespot::playback::player::duration_to_coefficient(
+        let normalisation_release_cf = crate::spotify::playback::player::duration_to_coefficient(
             std::time::Duration::from_secs_f64(self.settings.normalisation_release_ms / 1000.0),
         );
 

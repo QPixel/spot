@@ -5,9 +5,9 @@
 //! backend, wraps it in an [`AudioBuffer`], runs it through a [`ProcessorChain`],
 //! and forwards the processed audio to the real backend sink.
 
-use librespot::playback::audio_backend::{Sink, SinkResult};
-use librespot::playback::convert::Converter;
-use librespot::playback::decoder::AudioPacket;
+use crate::spotify::playback::audio_backend::{Sink, SinkResult};
+use crate::spotify::playback::convert::Converter;
+use crate::spotify::playback::decoder::AudioPacket;
 
 use super::{AudioBuffer, ProcessorChain};
 

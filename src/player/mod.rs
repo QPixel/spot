@@ -1,8 +1,5 @@
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-#[cfg(target_os = "macos")]
-use librespot_core::SpotifyUri;
-#[cfg(not(target_os = "macos"))]
-use librespot::core::SpotifyUri;
+use crate::spotify::core::SpotifyUri;
 use tokio::task;
 use url::Url;
 

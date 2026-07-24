@@ -9,12 +9,17 @@ use crate::{
 };
 use gio::prelude::SettingsExt;
 use libadwaita::ColorScheme;
-#[cfg(target_os = "macos")]
-use librespot_playback::config::Bitrate;
-#[cfg(not(target_os = "macos"))]
-use librespot::playback::config::{AudioFormat, Bitrate, NormalisationMethod, NormalisationType};
+use crate::spotify::playback::config::{
+    AudioFormat, Bitrate, NormalisationMethod, NormalisationType,
+};
 
 const SETTINGS: &str = "dev.diegovsky.Riff";
+
+#[cfg(target_os = "macos")]
+const DEFAULT_BACKEND: AudioBackend = AudioBackend::Rodio;
+
+#[cfg(target_os = "linux")]
+const DEFAULT_BACKEND: AudioBackend = AudioBackend::PulseAudio;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CloseWindowBehavior {
